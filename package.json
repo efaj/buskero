@@ -1,0 +1,26 @@
+{
+  "name": "buskero",
+  "version": "0.1.0",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Buskero: Local-first arcade loop trainer for sax, violin & MIDI keys",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CReNET-Games/buskero.git"
+  },
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "build": "node tools/build_static.mjs",
+    "preview": "STATIC_ROOT=dist PORT=4173 node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info tests/*.test.mjs",
+    "ip:check": "node tools/presubmit.mjs",
+    "provenance": "python3 governance/scripts/ledger.py verify",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check": "node tools/presubmit.mjs && node --test tests/*.test.mjs && node tools/build_static.mjs"
+  }
+}
