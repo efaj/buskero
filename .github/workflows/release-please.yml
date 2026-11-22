@@ -1,0 +1,23 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-please-oss/release-please-action@v4
+        with:
+          release-type: node
+          config-overrides-json: >-
+            {
+              "bump-minor-pre-major": true,
+              "initial-version": "0.1.0"
+            }
