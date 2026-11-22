@@ -216,3 +216,155 @@ export function drawHeaderBar(ctx, width, config, laneGeoms, plotX, plotW, heade
   ctx.stroke();
   ctx.restore();
 }
+
+export function drawIntonationGauge(ctx, plotX, plotW, gaugeY, detectedPitch, readoutText, isDark) {
+  const gaugeW = Math.min(380, plotW - 40);
+  const gaugeX = plotX + (plotW - gaugeW) / 2;
+
+  roundRectPath(ctx, gaugeX, gaugeY - 8, gaugeW, 16, 8);
+  ctx.fillStyle = isDark ? '#1e293b' : '#cbd5e1';
+  ctx.fill();
+
+  const sweetW = gaugeW * 0.4;
+  roundRectPath(ctx, gaugeX + (gaugeW - sweetW) / 2, gaugeY - 8, sweetW, 16, 4);
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+  ctx.fill();
+
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(gaugeX + gaugeW / 2, gaugeY - 11);
+  ctx.lineTo(gaugeX + gaugeW / 2, gaugeY + 11);
+  ctx.stroke();
+
+  ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
+  ctx.font = '600 11px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('-50¢ Flat', gaugeX - 8, gaugeY + 1);
+  ctx.textAlign = 'left';
+  ctx.fillText('+50¢ Sharp', gaugeX + gaugeW + 8, gaugeY + 1);
+
+  if (detectedPitch) {
+    const clampedCents = Math.max(-50, Math.min(50, detectedPitch.centsOff));
+    const needleX = gaugeX + ((clampedCents + 50) / 100) * gaugeW;
+    const inTune = Math.abs(clampedCents) <= 20;
+    ctx.fillStyle = inTune ? '#10b981' : '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(needleX, gaugeY, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = detectedPitch ? (isDark ? '#f8fafc' : '#0f172a') : isDark ? '#94a3b8' : '#475569';
+  ctx.font = detectedPitch ? '700 12px system-ui, sans-serif' : '600 12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(readoutText, plotX + plotW / 2, gaugeY + 22);
+}
+
+/**
+ * Coordinates replaceable 2D/3D renderers so activeMode, mounted DOM/canvas
+ * state, GPU capability fallback, and synchronous fallback re-entrancy stay
+ * synchronized from initial boot through Stage transitions.
+ */
+export function createHighwayViewSwitcher({
+  renderers,
+  gpuCapability,
+  initialMode = 'auto',
+  getLookaheadSec = () => 2.5,
+  onModeChanged = () => {},
+} = {}) {
+  const resolveMode = (requested) => {
+    if (requested === '3d') {
+      return gpuCapability?.supported ? '3d' : '2d';
+    }
+    if (requested === '2d') {
+      return '2d';
+    }
+    return gpuCapability?.recommendedMode === '3d' && gpuCapability?.supported ? '3d' : '2d';
+  };
+
+  let activeMode = resolveMode(initialMode);
+  let activeRenderer = renderers?.[activeMode] ?? renderers?.['2d'] ?? null;
+  let mountedContainer = null;
+
+  const syncMount = (containerEl) => {
+    mountedContainer = containerEl ?? null;
+    if (!mountedContainer || !activeRenderer) return activeRenderer;
+
+    for (const renderer of Object.values(renderers ?? {})) {
+      if (renderer && renderer !== activeRenderer && renderer.container) {
+        renderer.unmount();
+      }
+    }
+
+    activeRenderer.setLookaheadSec(getLookaheadSec());
+    if (activeRenderer.container !== mountedContainer) {
+      activeRenderer.mount(mountedContainer);
+    }
+    return activeRenderer;
+  };
+
+  const switchMode = (requestedMode, { persist = true } = {}) => {
+    const nextMode = resolveMode(requestedMode);
+    const prevRenderer = activeRenderer;
+    const targetRenderer = renderers?.[nextMode] ?? renderers?.['2d'] ?? null;
+    if (!targetRenderer) return activeMode;
+
+    if (
+      activeMode === nextMode &&
+      prevRenderer === targetRenderer &&
+      (!mountedContainer || targetRenderer.container === mountedContainer)
+    ) {
+      onModeChanged({ mode: activeMode, persist });
+      return activeMode;
+    }
+
+    activeMode = nextMode;
+    activeRenderer = targetRenderer;
+    activeRenderer.setLookaheadSec(getLookaheadSec());
+
+    if (mountedContainer) {
+      if (prevRenderer && prevRenderer !== activeRenderer && prevRenderer.container) {
+        prevRenderer.unmount();
+      }
+      if (activeRenderer.container !== mountedContainer) {
+        activeRenderer.mount(mountedContainer);
+      }
+    }
+
+    // If mount() triggered onFallbackNeeded -> switchMode('2d') synchronously,
+    // preserve the fallback state instead of overwriting it.
+    if (activeMode !== nextMode) {
+      return activeMode;
+    }
+
+    onModeChanged({ mode: activeMode, persist });
+    return activeMode;
+  };
+
+  const unmountAll = () => {
+    for (const renderer of Object.values(renderers ?? {})) {
+      if (renderer?.container) {
+        renderer.unmount();
+      }
+    }
+    mountedContainer = null;
+  };
+
+  return {
+    get activeMode() {
+      return activeMode;
+    },
+    get activeRenderer() {
+      return activeRenderer;
+    },
+    resolveMode,
+    syncMount,
+    switchMode,
+    unmountAll,
+  };
+}
