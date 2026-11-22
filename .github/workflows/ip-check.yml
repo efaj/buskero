@@ -1,0 +1,60 @@
+name: IP & Privacy Compliance
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  presubmit-audit:
+    name: Zero-Dependency, Privacy & Provenance Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Presubmit Audit
+        run: npm run ip:check
+
+  scancode-audit:
+    name: ScanCode License & Copyright Origin Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ScanCode Toolkit
+        run: pip install "pluggy<1.6.0" scancode-toolkit
+
+      - name: Scan source tree for disallowed licenses
+        run: |
+          scancode --license --copyright --json-pp scancode-report.json src/ styles/ tools/ server.mjs index.html LICENSE
+          python3 -c '
+          import json, sys
+          data = json.load(open("scancode-report.json"))
+          for f in data.get("files", []):
+              for det in f.get("license_detections", []):
+                  expr = det.get("license_expression_spdx", "")
+                  if "Proprietary" in expr or "Commercial" in expr:
+                      print(f"Disallowed license expression in {f.get(\"path\")}: {expr}")
+                      sys.exit(1)
+          print("ScanCode check passed with zero disallowed license detections.")
+          '

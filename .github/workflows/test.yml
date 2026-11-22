@@ -1,0 +1,28 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Unit Tests & Presubmit Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Presubmit & Provenance Audit
+        run: npm run ip:check
+
+      - name: Run Unit Tests with Coverage
+        run: make test-cov
