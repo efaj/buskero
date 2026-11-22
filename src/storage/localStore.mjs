@@ -161,3 +161,146 @@ function resolveStorageBackend(providedStorage) {
   }
   return createMemoryStorageAdapter();
 }
+
+export function createLocalStore({ storage } = {}) {
+  const backend = resolveStorageBackend(storage);
+
+  function readJson(key, fallback) {
+    try {
+      const raw = backend.getItem(key);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function writeJson(key, value) {
+    try {
+      backend.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function loadPreferences() {
+    const raw = readJson(PREFS_STORAGE_KEY, {});
+    return sanitizePreferences(raw);
+  }
+
+  function savePreferences(patch = {}) {
+    const current = loadPreferences();
+    const merged = sanitizePreferences({
+      ...current,
+      ...patch,
+      songSettings: patch.songSettings ? { ...current.songSettings, ...patch.songSettings } : current.songSettings,
+    });
+    writeJson(PREFS_STORAGE_KEY, merged);
+    return merged;
+  }
+
+  function saveSongSettings(songId, settings) {
+    if (!songId) return loadPreferences();
+    const current = loadPreferences();
+    const nextMap = {
+      ...current.songSettings,
+      [songId]: {
+        leadTrackIndex: settings.leadTrackIndex,
+        octaveShift: settings.octaveShift,
+        semitoneTranspose: settings.semitoneTranspose,
+      },
+    };
+    return savePreferences({ songSettings: nextMap });
+  }
+
+  function getSongSettings(songId) {
+    if (!songId) return null;
+    const prefs = loadPreferences();
+    return prefs.songSettings[songId] ?? null;
+  }
+
+  function loadScoresMap() {
+    const raw = readJson(SCORES_STORAGE_KEY, {});
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  }
+
+  function getBestScore(params) {
+    const key = buildScoreKey(params);
+    const scores = loadScoresMap();
+    const entry = scores[key];
+    return entry && typeof entry === 'object' ? { ...entry } : null;
+  }
+
+  function recordCompletedRun({
+    songId,
+    leadTrackIndex = 0,
+    instrumentId = 'violin',
+    playMode = 'realtime',
+    score = 0,
+    accuracy = 0,
+    maxCombo = 0,
+    tempoPct = 100,
+  }) {
+    const key = buildScoreKey({ songId, leadTrackIndex, instrumentId, playMode });
+    const scores = loadScoresMap();
+    const prev = scores[key] ?? null;
+    const cleanScore = Math.max(0, Math.round(Number(score) || 0));
+    const cleanAccuracy = Math.max(0, Math.min(100, Math.round(Number(accuracy) || 0)));
+    const cleanCombo = Math.max(0, Math.round(Number(maxCombo) || 0));
+    const cleanTempo = Math.round(clampNumber(tempoPct, 25, 150, 100));
+
+    const isNewBest =
+      !prev ||
+      cleanScore > prev.bestScore ||
+      (cleanScore === prev.bestScore && cleanAccuracy > prev.bestAccuracy) ||
+      (cleanScore === prev.bestScore && cleanAccuracy === prev.bestAccuracy && cleanCombo > prev.bestMaxCombo);
+
+    const nextRecord = {
+      bestScore: isNewBest ? cleanScore : prev.bestScore,
+      bestAccuracy: isNewBest ? cleanAccuracy : prev.bestAccuracy,
+      bestMaxCombo: isNewBest ? cleanCombo : prev.bestMaxCombo,
+      bestTempoPct: isNewBest ? cleanTempo : prev.bestTempoPct,
+      completions: (prev?.completions ?? 0) + 1,
+      updatedAt: Date.now(),
+    };
+
+    scores[key] = nextRecord;
+    writeJson(SCORES_STORAGE_KEY, scores);
+    return { isNewBest, record: nextRecord };
+  }
+
+  function clearAllLocalStore() {
+    try {
+      backend.removeItem(PREFS_STORAGE_KEY);
+      backend.removeItem(SCORES_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  function getStorageSummary() {
+    const prefsRaw = backend.getItem(PREFS_STORAGE_KEY) || '';
+    const scoresRaw = backend.getItem(SCORES_STORAGE_KEY) || '';
+    const prefs = loadPreferences();
+    const scores = loadScoresMap();
+    return {
+      hasPreferences: prefsRaw.length > 0,
+      scoreCount: Object.keys(scores).length,
+      songSettingsCount: Object.keys(prefs.songSettings).length,
+      approxBytes: prefsRaw.length + scoresRaw.length,
+    };
+  }
+
+  return {
+    loadPreferences,
+    savePreferences,
+    saveSongSettings,
+    getSongSettings,
+    getBestScore,
+    recordCompletedRun,
+    clearAllLocalStore,
+    getStorageSummary,
+  };
+}
