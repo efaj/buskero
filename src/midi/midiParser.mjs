@@ -467,8 +467,163 @@ export function parseMidiBuffer(input) {
     tracks,
   };
 }
+
+/**
+ * Build a valid Standard MIDI File (Format 1) Uint8Array from structured tracks & tempo changes.
+ */
+export function buildMidiBuffer({
+  ticksPerBeat = 480,
+  bpm = 120,
+  tempoChanges = null,
+  timeSignature = { numerator: 4, denominator: 4 },
+  tracks = [],
+}) {
+  const effectiveTempos =
+    tempoChanges && tempoChanges.length > 0 ? tempoChanges : [{ tick: 0, usPerBeat: Math.round(60_000_000 / bpm) }];
+
+  const allTracks = [];
+
+  // Conductor / Tempo track
+  const conductorEvents = [];
+  const denomPow = Math.max(0, Math.round(Math.log2(timeSignature.denominator || 4)));
+  conductorEvents.push({
+    tick: 0,
+    bytes: [0xff, 0x58, 0x04, timeSignature.numerator || 4, denomPow, 24, 8],
+  });
+  for (const tc of effectiveTempos) {
+    const us = Math.max(1000, Math.round(tc.usPerBeat ?? 60_000_000 / (tc.bpm || bpm)));
+    conductorEvents.push({
+      tick: tc.tick ?? 0,
+      bytes: [0xff, 0x51, 0x03, (us >> 16) & 0xff, (us >> 8) & 0xff, us & 0xff],
+    });
+  }
+  allTracks.push(conductorEvents);
+
+  for (const track of tracks) {
+    const events = [];
+    const channel = track.channel ?? 0;
+    if (track.name) {
+      const nameBytes = encodeAscii(track.name);
+      events.push({ tick: 0, order: 0, bytes: [0xff, 0x03, ...writeVLQ(nameBytes.length), ...nameBytes] });
+    }
+    if (track.program != null) {
+      events.push({ tick: 0, order: 1, bytes: [0xc0 | (channel & 0x0f), track.program & 0x7f] });
+    }
+    for (const note of track.notes ?? []) {
+      const startTick = Math.max(0, Math.round(note.startTick));
+      const endTick = Math.max(startTick + 1, Math.round(note.startTick + note.durationTicks));
+      const vel = Math.max(1, Math.min(127, note.velocity ?? 92));
+      const midi = Math.max(0, Math.min(127, note.midi));
+      events.push({ tick: startTick, order: 3, bytes: [0x90 | (channel & 0x0f), midi, vel] });
+      events.push({ tick: endTick, order: 2, bytes: [0x80 | (channel & 0x0f), midi, 0] });
+    }
+    allTracks.push(events);
+  }
+
+  const out = [];
+  // Header chunk
+  out.push(...encodeAscii('MThd'));
+  pushUint32(out, 6);
+  pushUint16(out, 1); // Format 1
+  pushUint16(out, allTracks.length);
+  pushUint16(out, ticksPerBeat);
+
+  for (const trackEvents of allTracks) {
+    const sorted = [...trackEvents].sort((a, b) => a.tick - b.tick || (a.order ?? 0) - (b.order ?? 0));
+    const trkBytes = [];
+    let prevTick = 0;
+    for (const ev of sorted) {
+      const delta = Math.max(0, ev.tick - prevTick);
+      prevTick = ev.tick;
+      trkBytes.push(...writeVLQ(delta), ...ev.bytes);
+    }
+    // End of track
+    trkBytes.push(0x00, 0xff, 0x2f, 0x00);
+
+    out.push(...encodeAscii('MTrk'));
+    pushUint32(out, trkBytes.length);
+    out.push(...trkBytes);
+  }
+
+  return new Uint8Array(out);
+}
+
 const COMFORTABLE_CONCERT_RANGES = {
   violin: [55, 88],
   saxophone: [49, 81], // Alto Eb comfort concert range (~Db3..A5)
   piano: [48, 84],
 };
+
+/**
+ * Recommend the best lead track, backing tracks, and octave shift for an instrument.
+ */
+export function recommendLeadTrack(parsedMidi, instrumentId = 'violin') {
+  const tracks = parsedMidi?.tracks ?? [];
+  if (tracks.length === 0) {
+    return { leadTrackIndex: 0, backingTrackIndices: [], suggestedOctaveShift: 0 };
+  }
+
+  const [prefMin, prefMax] = COMFORTABLE_CONCERT_RANGES[instrumentId] ?? [55, 84];
+  let bestIdx = 0;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < tracks.length; i += 1) {
+    const t = tracks[i];
+    if (t.isPercussion) continue;
+    const avgMidi = t.notes.reduce((sum, n) => sum + n.midi, 0) / Math.max(1, t.notes.length);
+    const center = (prefMin + prefMax) / 2;
+    const rangePenalty = Math.abs(avgMidi - center) * 0.6;
+
+    let score = Math.min(t.noteCount, 300) * 0.25 - rangePenalty;
+    if (instrumentId === 'violin' || instrumentId === 'saxophone') {
+      score += t.monophonyRatio * 120;
+      if (t.program >= 40 && t.program <= 79) score += 25; // Strings / Winds
+    } else {
+      // Piano prefers richer polyphonic or main keyboard tracks
+      score += Math.min(t.noteCount, 500) * 0.2;
+      if (t.program >= 0 && t.program <= 7) score += 30;
+    }
+
+    const lowerName = t.name.toLowerCase();
+    if (
+      lowerName.includes('melody') ||
+      lowerName.includes('lead') ||
+      lowerName.includes('solo') ||
+      lowerName.includes('violin') ||
+      lowerName.includes('sax')
+    ) {
+      score += 40;
+    }
+    if (lowerName.includes('bass') || lowerName.includes('drum')) {
+      score -= 45;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+
+  const leadTrack = tracks[bestIdx];
+  let bestShift = 0;
+  let bestInRange = -1;
+  for (const shift of [0, 1, -1, 2, -2]) {
+    let inRange = 0;
+    for (const n of leadTrack.notes) {
+      const shifted = n.midi + shift * 12;
+      if (shifted >= prefMin && shifted <= prefMax) inRange += 1;
+    }
+    if (inRange > bestInRange || (inRange === bestInRange && Math.abs(shift) < Math.abs(bestShift))) {
+      bestInRange = inRange;
+      bestShift = shift;
+    }
+  }
+
+  const backingTrackIndices = tracks.map((_t, idx) => idx).filter((idx) => idx !== bestIdx);
+
+  return {
+    leadTrackIndex: bestIdx,
+    backingTrackIndices,
+    suggestedOctaveShift: bestShift,
+  };
+}
