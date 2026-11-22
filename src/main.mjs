@@ -169,6 +169,12 @@ const game = new GameEngine({
 
 const renderers = {
   '2d': new Highway2DRenderer({ canvas: els.canvas, lookaheadSec: state.lookaheadSec }),
+  '3d': new Highway3DRenderer({
+    lookaheadSec: state.lookaheadSec,
+    onFallbackNeeded: (reason) => {
+      if (viewSwitcher.activeMode === '3d') {
+        switchHighwayRenderer('2d', { persist: false });
+        setInputStatus(`Switched to 2D Highway (${reason})`, 'idle');
     }
     syncViewModeUI();
   },
@@ -180,6 +186,11 @@ function isMicInstrument(instrumentId) {
   return instrumentId === 'violin' || instrumentId === 'saxophone';
 }
 
+function formatSeconds(sec) {
+  const safe = Math.max(0, Math.floor(sec));
+  const mins = Math.floor(safe / 60);
+  const rem = safe % 60;
+  return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
 }
 
 function setInputStatus(text, statusType = 'idle') {
@@ -190,11 +201,209 @@ function setInputStatus(text, statusType = 'idle') {
 function updateRangeProgressFallback(input) {
   if (!CSS.supports('accent-color', 'red')) {
     const min = Number(input.min || 0);
+    const max = Number(input.max || 100);
+    const val = Number(input.value || 0);
+    const pct = ((val - min) / Math.max(1, max - min)) * 100;
+    input.style.setProperty('--progress', `${pct}%`);
+  }
+}
+
+function syncViewModeUI() {
+  for (const radio of [...els.viewModeRadios, ...els.lobbyViewModeRadios]) {
+    if (radio.value === '3d') {
+  els.pianoOptions.hidden = state.instrumentId !== 'piano';
+
+  // Strictly hide irrelevant input controls per instrument
+  els.micToggleBtn.hidden = !isMic;
+  els.micCalibrationFields.hidden = !isMic;
+  els.midiConnectBtn.hidden = isMic;
+    playMode: state.playMode,
+  });
+  if (!best) {
+    els.hudBest.textContent = '—';
+    els.lobbyBest.textContent = '—';
+    els.hudBest.title = 'No completed personal run yet for this track, instrument & mode';
+    return;
+  }
+  const formatted = `${best.bestScore} (${best.bestAccuracy}%)`;
+  els.hudBest.textContent = formatted;
+  els.lobbyBest.textContent = formatted;
+  els.hudBest.title = `Best: ${best.bestScore} pts · ${best.bestAccuracy}% · ${best.bestMaxCombo}x max combo (${best.completions} runs)`;
+}
+
+function syncFolderSelectOptions() {
+  const opts = [];
+  const rootOpt = document.createElement('option');
+  rootOpt.value = '';
+  rootOpt.textContent = 'Uploaded Songs (Root)';
+  opts.push(rootOpt);
+
+  const allPaths = new Set(state.customFolders);
+  for (const song of state.customSongs) {
+    if (song.folderPath) allPaths.add(song.folderPath);
+  }
+  for (const folderPath of Array.from(allPaths).toSorted((a, b) => a.localeCompare(b))) {
+    const opt = document.createElement('option');
+    opt.value = folderPath;
+    opt.textContent = folderPath;
+    opts.push(opt);
+  }
+
+  els.songFolderSelect.replaceChildren(...opts);
+  els.songFolderSelect.value = state.currentSongFolder || '';
+}
+
+function setFolderCollapsedState(folderKey, isOpen) {
+  const next = new Set(state.collapsedFolders);
+  if (isOpen) {
+    next.delete(folderKey);
+  } else {
+    next.add(folderKey);
+  }
+  state.collapsedFolders = Array.from(next);
+  localStore.savePreferences({ collapsedFolders: state.collapsedFolders });
+}
+
+function createSongTreeRow(song) {
+  const row = document.createElement('div');
+  row.className = 'tree-song-row';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tree-song-btn';
+  if (song.id === state.currentSongId) {
+    btn.setAttribute('aria-current', 'true');
+  }
+  if (!state.parsedMidi) return;
+  const optionNodes = [];
+  const listNodes = [];
+
+  state.parsedMidi.tracks.forEach((track, idx) => {
+    const option = document.createElement('option');
+    option.value = String(idx);
+    option.textContent = `${track.name} (${track.noteCount} notes · ${midiToNoteName(track.minMidi)}–${midiToNoteName(track.maxMidi)})`;
+    if (idx === state.leadTrackIndex) option.selected = true;
+    optionNodes.push(option);
+
+    const li = document.createElement('li');
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = `${idx === state.leadTrackIndex ? '★ ' : ''}${track.name}`;
+    const infoSpan = document.createElement('span');
+    infoSpan.textContent = `${track.noteCount} notes · ${track.instrumentName}`;
+    li.append(titleSpan, infoSpan);
+    listNodes.push(li);
+  });
+
+  els.leadTrackSelect.replaceChildren(...optionNodes);
+  els.trackListPreview.replaceChildren(...listNodes);
+
+  els.octaveShiftSelect.value = String(state.octaveShift);
+  els.semitoneTransposeSelect.value = String(state.semitoneTranspose);
+}
+
+function rebuildChartFromCurrentSong() {
+  if (!state.parsedMidi || state.parsedMidi.tracks.length === 0) return;
+
+  const tracks = state.parsedMidi.tracks;
+  const leadTrack = tracks[state.leadTrackIndex] ?? tracks[0];
+  const mod = getInstrumentModule(state.instrumentId);
+
+  const shiftedNotes = leadTrack.notes.map((n) => ({
+    ...n,
+    midi: Math.max(21, Math.min(108, n.midi + state.octaveShift * 12 + state.semitoneTranspose)),
+  els.hudAccuracy.textContent = `${snap.accuracy}%`;
+
+  const hasA = snap.loopStartSec !== null;
+  const hasB = snap.loopEndSec !== null;
+  els.loopClearBtn.hidden = !hasA && !hasB;
+  if (hasA && hasB) {
+    els.loopStatusPill.hidden = false;
+    els.loopStatusPill.textContent = `Loop ${formatSeconds(snap.loopStartSec)}–${formatSeconds(snap.loopEndSec)} (×${snap.loopCount})`;
+  } else if (hasA) {
+    els.loopStatusPill.hidden = false;
+    els.loopStatusPill.textContent = `Loop A: ${formatSeconds(snap.loopStartSec)} → set B`;
+  } else {
+    els.loopStatusPill.hidden = true;
+  }
+
+  const duration = Math.max(0.1, snap.durationSec);
+  const clampedTime = Math.max(0, Math.min(duration, snap.songTime));
+  els.songProgress.value = Math.round((clampedTime / duration) * 100);
+  els.timeReadout.textContent = `${formatSeconds(clampedTime)} / ${formatSeconds(duration)}`;
+}
+
+function syncMidiDeviceUI(status) {
+  if (state.instrumentId !== 'piano') return;
+  if (!status.supported) {
+    els.midiDeviceSummary.textContent =
+      'Web MIDI unavailable in this browser. Use computer keys (A–K) or click on-screen piano keys.';
+    setInputStatus('Piano Keys Ready: press A–K or click keys', 'idle');
+    return;
+  }
+  if (status.lastError) {
+    els.midiDeviceSummary.textContent = status.lastError;
+    setInputStatus(`MIDI Error: ${status.lastError}`, 'error');
+    return;
+  }
+  if (status.devices.length === 0) {
+    els.midiDeviceSummary.textContent = status.connected
+      ? 'Web MIDI ready — no hardware keyboard detected yet. Plug in USB MIDI or click piano keys.'
+      : 'Click "Connect MIDI" for USB/Bluetooth keyboards, or play with keys A–K.';
+    setInputStatus(
+      status.connected ? 'Web MIDI Ready (A–K keys active)' : 'Piano Ready: Connect MIDI or use A–K keys',
+      'idle',
+    );
+    return;
+  }
+  const names = status.devices.map((d) => d.name).join(', ');
+  els.midiDeviceSummary.textContent = `Connected MIDI: ${names}`;
+  setInputStatus(`MIDI Ready: ${names}`, 'active');
+}
+
+async function togglePlayPause() {
+  await synth.ensureContext();
+  await mic.resumeIfSuspended();
+  mic.setCalibration({ tuningOffsetCents: clamped });
+  els.tuningOffsetSlider.value = String(clamped);
+  els.tuningOffsetOutput.textContent = `${clamped > 0 ? '+' : ''}${clamped}¢`;
+  updateRangeProgressFallback(els.tuningOffsetSlider);
+  if (persist) {
+    localStore.savePreferences({ tuningOffsetCents: clamped });
+  }
+}
+
+async function calibrateSaxHorn() {
+  if (state.saxCalibrating) return;
+  if (!state.micActive) {
 async function refreshLegalStorageSummary() {
   const libSummary = await songLibrary.getLibrarySummary();
   const localSummary = localStore.getStorageSummary();
   const totalKb = ((libSummary.totalBytes + localSummary.approxBytes) / 1024).toFixed(1);
   els.legalStorageSummary.textContent = `Browser Storage: ${libSummary.count} uploaded MIDI(s) · ${localSummary.scoreCount} personal track record(s) · ~${totalKb} KB total`;
   els.clearSongsBtn.disabled = libSummary.count === 0;
+}
+
+function setupDialogLightDismissFallback() {
+  if (!('closedBy' in HTMLDialogElement.prototype)) {
+    const isOutside = (e, dialog) => {
+      const r = dialog.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+      let pressedOutside = false;
+      dialog.addEventListener('pointerdown', (e) => {
+        pressedOutside = isOutside(e, dialog);
+      });
+      dialog.addEventListener('pointerup', (e) => {
+        if (pressedOutside && isOutside(e, dialog)) dialog.close();
+      });
+    }
+  }
+
+  for (const dialog of [els.pauseDialog, els.legalDialog]) {
+    dialog.addEventListener('close', () => {
+      dialog.returnValue = '';
+    });
+  }
 }
 
