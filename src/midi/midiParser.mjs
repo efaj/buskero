@@ -208,6 +208,265 @@ function tickToSeconds(tick, tempoMap, ticksPerBeat, smpteFps, smpteTicksPerFram
   return seg.timeSec + deltaTicks * (seg.usPerBeat / 1_000_000 / ticksPerBeat);
 }
 
+/**
+ * Parse a Standard MIDI File (.mid / .midi) ArrayBuffer or Uint8Array.
+ */
+export function parseMidiBuffer(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength < 14) {
+    throw new Error('File is too small to be a valid MIDI file.');
+  }
+
+  const headerTag = readAscii(bytes, 0, 4);
+  if (headerTag !== 'MThd') {
+    throw new Error('Invalid MIDI header: missing MThd chunk.');
+  }
+
+  const headerLength = readUint32(bytes, 4);
+  if (headerLength < 6 || 8 + headerLength > bytes.byteLength) {
+    throw new Error('Corrupt MIDI header length.');
+  }
+
+  const format = readUint16(bytes, 8);
+  const numTracks = readUint16(bytes, 10);
+  const rawDivision = readUint16(bytes, 12);
+
+  let ticksPerBeat = 480;
+  let smpteFps = 0;
+  let smpteTicksPerFrame = 0;
+  if ((rawDivision & 0x8000) !== 0) {
+    const signedByte = (rawDivision >> 8) & 0xff;
+    const negFps = signedByte >= 128 ? signedByte - 256 : signedByte;
+    smpteFps = Math.abs(negFps) === 29 ? 29.97 : Math.abs(negFps) || 24;
+    smpteTicksPerFrame = rawDivision & 0xff || 40;
+    ticksPerBeat = Math.round((smpteFps * smpteTicksPerFrame) / 2);
+  } else {
+    ticksPerBeat = rawDivision || 480;
+  }
+
+  let offset = 8 + headerLength;
+  const tempoEvents = [];
+  const timeSignatures = [];
+  const rawTracks = [];
+
+  for (let trackIdx = 0; trackIdx < numTracks && offset + 8 <= bytes.byteLength; trackIdx += 1) {
+    // Skip any unknown chunks safely until MTrk
+    while (offset + 8 <= bytes.byteLength && readAscii(bytes, offset, 4) !== 'MTrk') {
+      const skipLen = readUint32(bytes, offset + 4);
+      offset += 8 + skipLen;
+    }
+    if (offset + 8 > bytes.byteLength) break;
+
+    const chunkLen = readUint32(bytes, offset + 4);
+    const trackStart = offset + 8;
+    const trackEnd = Math.min(bytes.byteLength, trackStart + chunkLen);
+    offset = trackStart + chunkLen;
+
+    let cursor = trackStart;
+    let tick = 0;
+    let runningStatus = 0;
+    let trackName = '';
+    const channelPrograms = new Map();
+    const activeNotes = new Map(); // key: `${channel}:${midi}` -> stack of { startTick, velocity, channel }
+    const notes = [];
+
+    while (cursor < trackEnd) {
+      const delta = readVLQ(bytes, cursor, trackEnd);
+      cursor = delta.nextOffset;
+      tick += delta.value;
+      if (cursor >= trackEnd) break;
+
+      let statusByte = bytes[cursor];
+      if (statusByte < 0x80) {
+        if (!runningStatus) {
+          throw new Error(`Invalid MIDI running status at byte ${cursor}.`);
+        }
+        statusByte = runningStatus;
+      } else {
+        cursor += 1;
+        if (statusByte < 0xf0) {
+          runningStatus = statusByte;
+        } else {
+          // Meta / SysEx resets running status in SMF
+          runningStatus = 0;
+        }
+      }
+
+      if (statusByte === 0xff) {
+        if (cursor >= trackEnd) break;
+        const metaType = bytes[cursor++];
+        const lenRes = readVLQ(bytes, cursor, trackEnd);
+        cursor = lenRes.nextOffset;
+        const metaEnd = Math.min(trackEnd, cursor + lenRes.value);
+        const payload = bytes.subarray(cursor, metaEnd);
+        cursor = metaEnd;
+
+        if ((metaType === 0x03 || metaType === 0x04) && !trackName) {
+          trackName = decodeText(payload);
+        } else if (metaType === 0x51 && payload.length >= 3) {
+          const usPerBeat = (payload[0] << 16) | (payload[1] << 8) | payload[2];
+          if (usPerBeat > 0) {
+            tempoEvents.push({ tick, usPerBeat });
+          }
+        } else if (metaType === 0x58 && payload.length >= 2) {
+          timeSignatures.push({
+            tick,
+            numerator: payload[0],
+            denominator: 1 << payload[1],
+          });
+        } else if (metaType === 0x2f) {
+          break;
+        }
+      } else if (statusByte === 0xf0 || statusByte === 0xf7) {
+        const lenRes = readVLQ(bytes, cursor, trackEnd);
+        cursor = Math.min(trackEnd, lenRes.nextOffset + lenRes.value);
+      } else {
+        const eventType = statusByte & 0xf0;
+        const channel = statusByte & 0x0f;
+
+        if (eventType === 0xc0 || eventType === 0xd0) {
+          if (cursor >= trackEnd) break;
+          const data1 = bytes[cursor++];
+          if (eventType === 0xc0) {
+            channelPrograms.set(channel, data1);
+          }
+        } else if (
+          eventType === 0x80 ||
+          eventType === 0x90 ||
+          eventType === 0xa0 ||
+          eventType === 0xb0 ||
+          eventType === 0xe0
+        ) {
+          if (cursor + 1 >= trackEnd) break;
+          const data1 = bytes[cursor++];
+          const data2 = bytes[cursor++];
+
+          if (eventType === 0x90 && data2 > 0) {
+            const key = `${channel}:${data1}`;
+            let stack = activeNotes.get(key);
+            if (!stack) {
+              stack = [];
+              activeNotes.set(key, stack);
+            }
+            stack.push({ startTick: tick, velocity: data2, channel, midi: data1 });
+          } else if (eventType === 0x80 || (eventType === 0x90 && data2 === 0)) {
+            const key = `${channel}:${data1}`;
+            const stack = activeNotes.get(key);
+            if (stack && stack.length > 0) {
+              const started = stack.shift();
+              notes.push({
+                midi: started.midi,
+                channel: started.channel,
+                velocity: started.velocity,
+                startTick: started.startTick,
+                endTick: Math.max(started.startTick + 1, tick),
+              });
+            }
+          }
+        } else {
+          // Unknown system realtime/common; bail cleanly
+          break;
+        }
+      }
+    }
+
+    // Close any dangling notes cleanly at last tick seen in track
+    for (const stack of activeNotes.values()) {
+      for (const started of stack) {
+        notes.push({
+          midi: started.midi,
+          channel: started.channel,
+          velocity: started.velocity,
+          startTick: started.startTick,
+          endTick: Math.max(started.startTick + Math.round(ticksPerBeat / 2), tick),
+        });
+      }
+    }
+
+    rawTracks.push({
+      index: trackIdx,
+      name: trackName,
+      channelPrograms,
+      notes,
+    });
+  }
+
+  const tempoMap = buildTempoMap(tempoEvents, ticksPerBeat, smpteFps, smpteTicksPerFrame);
+  const tracks = [];
+  let maxTimeSec = 0;
+
+  for (const raw of rawTracks) {
+    if (raw.notes.length === 0) continue;
+    const channels = new Set();
+    let minMidi = 127;
+    let maxMidi = 0;
+
+    const timedNotes = raw.notes
+      .map((n) => {
+        const startTime = tickToSeconds(n.startTick, tempoMap, ticksPerBeat, smpteFps, smpteTicksPerFrame);
+        const endTime = tickToSeconds(n.endTick, tempoMap, ticksPerBeat, smpteFps, smpteTicksPerFrame);
+        const duration = Math.max(0.05, endTime - startTime);
+        channels.add(n.channel);
+        if (n.midi < minMidi) minMidi = n.midi;
+        if (n.midi > maxMidi) maxMidi = n.midi;
+        if (startTime + duration > maxTimeSec) maxTimeSec = startTime + duration;
+        return {
+          midi: n.midi,
+          channel: n.channel,
+          velocity: n.velocity,
+          startTick: n.startTick,
+          endTick: n.endTick,
+          startTime,
+          endTime: startTime + duration,
+          duration,
+        };
+      })
+      .sort((a, b) => a.startTime - b.startTime || a.midi - b.midi);
+
+    const primaryChannel = [...channels][0] ?? 0;
+    const program = raw.channelPrograms.get(primaryChannel) ?? 0;
+    const isPercussion = channels.size === 1 && primaryChannel === 9;
+
+    // Monophony ratio: fraction of notes not overlapping the previous note
+    let nonOverlapping = 0;
+    let prevEnd = -1;
+    for (const note of timedNotes) {
+      if (note.startTime >= prevEnd - 0.03) {
+        nonOverlapping += 1;
+      }
+      if (note.endTime > prevEnd) prevEnd = note.endTime;
+    }
+    const monophonyRatio = timedNotes.length > 0 ? nonOverlapping / timedNotes.length : 1;
+
+    tracks.push({
+      index: tracks.length,
+      sourceTrackIndex: raw.index,
+      name: raw.name || (isPercussion ? 'Percussion' : `Track ${raw.index + 1} (${getProgramName(program)})`),
+      program,
+      instrumentName: isPercussion ? 'Percussion' : getProgramName(program),
+      primaryChannel,
+      isPercussion,
+      noteCount: timedNotes.length,
+      minMidi,
+      maxMidi,
+      monophonyRatio,
+      notes: timedNotes,
+    });
+  }
+
+  const initialUsPerBeat = tempoMap[0]?.usPerBeat ?? 500000;
+  const bpm = Math.round((60_000_000 / initialUsPerBeat) * 10) / 10;
+
+  return {
+    format,
+    ticksPerBeat,
+    bpm,
+    tempoMap,
+    timeSignatures: timeSignatures.length > 0 ? timeSignatures : [{ tick: 0, numerator: 4, denominator: 4 }],
+    durationSec: maxTimeSec,
+    tracks,
+  };
+}
 const COMFORTABLE_CONCERT_RANGES = {
   violin: [55, 88],
   saxophone: [49, 81], // Alto Eb comfort concert range (~Db3..A5)
