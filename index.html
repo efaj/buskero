@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect x='2' y='2' width='24' height='24' rx='7' fill='%230369a1'/%3E%3Cpath d='M9 19V9l10-1.5v10' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='19' r='2.2' fill='%23fff'/%3E%3Ccircle cx='18' cy='17.5' r='2.2' fill='%23fff'/%3E%3C/svg%3E">
+  <title>Buskero: Arcade loop trainer for sax, violin &amp; MIDI keys</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <!-- Screen 1: Song Picker & One-Time Setup Lobby -->
+  <div id="lobby-screen" class="lobby-screen">
+    <header class="app-header">
+      <div class="brand">
+        <svg class="brand-icon" width="26" height="26" viewBox="0 0 28 28" aria-hidden="true">
+          <rect x="2" y="2" width="24" height="24" rx="7" fill="currentColor" opacity="0.16" />
+          <path d="M8 20V8l12-2v12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="7" cy="20" r="2.5" fill="currentColor" />
+          <circle cx="19" cy="18" r="2.5" fill="currentColor" />
+        </svg>
+        <div>
+          <h1>Buskero</h1>
+          <p class="brand-sub">Arcade loop trainer for sax, violin &amp; MIDI keys</p>
+        </div>
+      </div>
+
+      <nav class="instrument-nav" aria-label="Instrument selection">
+        <label class="mode-pill">
+          <input type="radio" name="instrument" value="violin" checked>
+          <span>Violin (Mic)</span>
+        </label>
+        <label class="mode-pill">
+          <input type="radio" name="instrument" value="saxophone">
+          <span>Saxophone (Mic)</span>
+        </label>
+        <label class="mode-pill">
+          <input type="radio" name="instrument" value="piano">
+          <span>Piano (MIDI / Keys)</span>
+        </label>
+      </nav>
+
+      <div class="header-actions">
+        <button type="button" id="open-legal-btn" class="btn secondary btn-sm">Privacy &amp; Legal</button>
+      </div>
+    </header>
+
+    <main class="lobby-workspace">
+      <section class="panel-card library-pane" aria-labelledby="library-heading">
+        <div class="pane-header">
+          <h2 id="library-heading">Song Library</h2>
+          <button type="button" id="toggle-new-folder-btn" class="btn secondary btn-sm">+ New Folder</button>
+        </div>
+
+        <form id="new-folder-form" class="inline-folder-form" hidden>
+          <label for="new-folder-input" class="visually-hidden">New folder path</label>
+          <input
+            type="text"
+            id="new-folder-input"
+            class="text-control"
+            placeholder="Folder name (e.g. Jazz or Jazz/Ballads)"
+            maxlength="96"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+          >
+          <button type="submit" class="btn primary btn-sm">Create</button>
+          <button type="button" id="cancel-new-folder-btn" class="btn secondary btn-sm">Cancel</button>
+        </form>
+
+        <search class="tree-search">
+          <label for="library-filter-input" class="visually-hidden">Filter songs and folders</label>
+          <input
+            type="search"
+            id="library-filter-input"
+            class="text-control"
+            placeholder="Filter songs or folders…"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+          >
+        </search>
+
+        <div id="song-tree" class="song-tree" role="region" aria-label="Song folders and tracks"></div>
+
+        <label class="dropzone compact-dropzone" id="midi-dropzone">
+          <input type="file" id="midi-file-input" accept=".mid,.midi,audio/midi" multiple>
+          <span class="dropzone-title">Drop <code>.mid</code> / <code>.midi</code> files here (or onto a folder)</span>
+          <span class="dropzone-hint">Saved locally in browser IndexedDB — never uploaded</span>
+        </label>
+      </section>
+
+      <aside class="inspector-pane" aria-label="Selected song and practice setup">
+        <section class="panel-card">
+          <div class="song-summary-head">
+            <div>
+              <h2 class="selected-song-title" id="selected-song-title">Ode to Joy (Beethoven)</h2>
+              <p class="song-meta" id="song-meta">Loaded: Ode to Joy</p>
+            </div>
+            <span class="best-badge" title="Personal best for selected song, track, instrument &amp; mode">
+              Best <strong id="lobby-best">—</strong>
+            </span>
+          </div>
+
+          <div id="custom-song-actions" class="custom-song-actions" hidden>
+            <label class="field-label" for="song-folder-select">Folder</label>
+            <select id="song-folder-select" class="text-control"></select>
+            <button type="button" id="delete-custom-song-btn" class="btn danger-btn btn-sm">Remove</button>
+          </div>
+
+          <div class="lobby-options-grid">
+            <div class="option-cell">
+              <span class="field-label">Practice Mode</span>
+              <div class="segmented" role="group" aria-label="Gameplay mode">
+                <label class="mode-pill">
+                  <input type="radio" name="play-mode" value="realtime" checked>
+                  <span>Real-Time</span>
+                </label>
+                <label class="mode-pill">
+                  <input type="radio" name="play-mode" value="wait">
+                  <span>Wait</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="option-cell">
+              <span class="field-label">Highway View</span>
+              <div class="segmented" role="group" aria-label="Lobby highway view mode">
+                <label class="mode-pill">
+                  <input type="radio" name="lobby-view-mode" value="2d">
+                  <span>2D</span>
+                </label>
+                <label class="mode-pill">
+                  <input type="radio" name="lobby-view-mode" value="3d">
+                  <span>3D</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="lobby-options-grid">
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="tempo-slider">Tempo</label>
+                <output id="tempo-output" for="tempo-slider">100%</output>
+              </div>
+              <input type="range" id="tempo-slider" min="25" max="150" step="5" value="100">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-head">
+                <label for="zoom-slider">Scroll Speed</label>
+                <output id="zoom-output" for="zoom-slider">2.5s</output>
+              </div>
+              <input type="range" id="zoom-slider" min="15" max="40" step="1" value="25">
+            </div>
+          </div>
+
+          <details class="sub-disclosure" id="tracks-details">
+            <summary>Tracks &amp; Key Transpose</summary>
+            <div class="disclosure-body">
+              <label class="field-label" for="lead-track-select">Lead Track (Highway)</label>
+              <select id="lead-track-select" class="text-control"></select>
+
+              <div class="lobby-options-grid">
+                <div class="slider-row">
+                  <label class="field-label" for="octave-shift-select">Octave Shift</label>
+                  <select id="octave-shift-select" class="text-control">
+                    <option value="-2">-2 Octaves</option>
+                    <option value="-1">-1 Octave</option>
+                    <option value="0" selected>0 (Original)</option>
+                    <option value="1">+1 Octave</option>
+                    <option value="2">+2 Octaves</option>
+                  </select>
+                </div>
+
+                <div class="slider-row">
+                  <label class="field-label" for="semitone-transpose-select">Key Transpose</label>
+                  <select id="semitone-transpose-select" class="text-control">
+                    <option value="-6">-6 st</option>
+                    <option value="-5">-5 st</option>
+                    <option value="-4">-4 st</option>
+                    <option value="-3">-3 st</option>
+                    <option value="-2">-2 st</option>
+                    <option value="-1">-1 st</option>
+                    <option value="0" selected>0 (Original)</option>
+                    <option value="1">+1 st</option>
+                    <option value="2">+2 st</option>
+                    <option value="3">+3 st</option>
+                    <option value="4">+4 st</option>
+                    <option value="5">+5 st</option>
+                    <option value="6">+6 st</option>
+                  </select>
+                </div>
+              </div>
+
+              <ul id="track-list-preview" class="track-list"></ul>
+            </div>
+          </details>
+
+          <button type="button" id="start-session-btn" class="btn primary btn-lg full-width">▶ Start Playing (Enter)</button>
+        </section>
+
+        <details class="panel-card setup-disclosure" id="lobby-setup-details" open>
+          <summary class="setup-summary">Instrument &amp; Input Setup</summary>
+          <div id="lobby-setup-slot" class="setup-slot">
+            <!-- Shared setup panel starts here in Lobby and moves into Pause menu during gameplay -->
+            <div id="live-setup-panel" class="live-setup-panel">
+              <div id="instrument-options-card" class="setup-group">
+                <div id="violin-options" class="option-group">
+                  <label class="checkbox-row">
+                    <input type="checkbox" id="violin-fourth-finger">
+                    <span>Prefer 4th finger over upper open string</span>
+                  </label>
+                  <div class="legend-grid" aria-label="Violin string shape and color key">
+                    <span class="legend-chip"><span class="shape-dot shape-circle" aria-hidden="true">●</span> G String</span>
+                    <span class="legend-chip"><span class="shape-dot shape-diamond" aria-hidden="true">◆</span> D String</span>
+                    <span class="legend-chip"><span class="shape-dot shape-triangle" aria-hidden="true">▲</span> A String</span>
+                    <span class="legend-chip"><span class="shape-dot shape-hex" aria-hidden="true">⬡</span> E String</span>
+                  </div>
+                </div>
+
+                <div id="sax-options" class="option-group" hidden>
+                  <label class="field-label" for="sax-transposition">Horn Transposition</label>
+                  <select id="sax-transposition" class="text-control">
+                    <option value="alto_eb" selected>Alto Sax (E♭)</option>
+                    <option value="tenor_bb">Tenor Sax (B♭)</option>
+                    <option value="soprano_bb">Soprano Sax (B♭)</option>
+                    <option value="concert_c">Concert Pitch (C)</option>
+                  </select>
+                  <div class="input-actions">
+                    <button type="button" id="sax-autofit-btn" class="btn secondary btn-sm">Auto-Fit Octave</button>
+                    <button type="button" id="sax-calibrate-btn" class="btn primary btn-sm">Calibrate Horn (L1 'B')</button>
+                  </div>
+                  <p class="helper-note" id="sax-calibrate-status">Play a steady written B4 (Left Index L1 only) to auto-detect horn transposition &amp; tuning offset.</p>
+                </div>
+
+                <div id="piano-options" class="option-group" hidden>
+                  <p class="helper-note" id="midi-device-summary">Checking Web MIDI availability…</p>
+                  <p class="helper-note">Tip: Click the bottom piano keys or press keys <code>A–K</code> (<code>Z</code>/<code>X</code> to shift octave) to test without hardware.</p>
+                </div>
+              </div>
+
+              <div class="setup-group">
+                <div class="input-actions">
+                  <button type="button" id="mic-toggle-btn" class="btn primary btn-sm">Enable Microphone</button>
+                  <button type="button" id="midi-connect-btn" class="btn primary btn-sm" hidden>Connect MIDI</button>
+                </div>
+                <p class="status-pill" id="input-status-pill" role="status">Input: Ready</p>
+
+                <div class="lobby-options-grid">
+                  <div class="slider-row">
+                    <div class="slider-head">
+                      <label for="backing-vol-slider">Backing Volume</label>
+                      <output id="backing-vol-output" for="backing-vol-slider">70%</output>
+                    </div>
+                    <input type="range" id="backing-vol-slider" min="0" max="100" step="5" value="70">
+                  </div>
+
+                  <div class="slider-row">
+                    <div class="slider-head">
+                      <label for="lead-vol-slider">Lead Guide Volume</label>
+                      <output id="lead-vol-output" for="lead-vol-slider">60%</output>
+                    </div>
+                    <input type="range" id="lead-vol-slider" min="0" max="100" step="5" value="60">
+                  </div>
+                </div>
+              </div>
+
+              <details class="sub-disclosure" id="calibration-details">
+                <summary>Audio &amp; Mic Calibration</summary>
+                <div class="disclosure-body">
+                  <div class="slider-row">
+                    <div class="slider-head">
+                      <label for="latency-slider">Audio Latency Offset</label>
+                      <output id="latency-output" for="latency-slider">0 ms</output>
+                    </div>
+                    <input type="range" id="latency-slider" min="-150" max="150" step="10" value="0">
+                  </div>
+
+                  <div id="mic-calibration-fields" class="option-group">
+                    <div class="slider-row">
+                      <div class="slider-head">
+                        <label for="gate-slider">Mic Sensitivity Gate (RMS)</label>
+                        <output id="gate-output" for="gate-slider">0.012</output>
+                      </div>
+                      <input type="range" id="gate-slider" min="4" max="40" step="2" value="12">
+                    </div>
+
+                    <div class="slider-row">
+                      <div class="slider-head">
+                        <label for="tuning-offset-slider">Tuning Offset (Horn / Reference Pitch)</label>
+                        <output id="tuning-offset-output" for="tuning-offset-slider">0¢</output>
+                      </div>
+                      <div class="inline-control-row">
+                        <input type="range" id="tuning-offset-slider" min="-100" max="100" step="2" value="0">
+                        <button type="button" id="tuning-offset-reset-btn" class="btn secondary btn-sm">Reset 0¢</button>
+                      </div>
+                    </div>
+
+                    <label class="checkbox-row">
+                      <input type="checkbox" id="room-filter-checkbox">
+                      <span>Enable browser noise suppression / echo cancellation (off by default for sustained tone)</span>
+                    </label>
+
+                    <div class="calibration-meter">
+                      <div class="slider-head">
+                        <span>Live Input Level</span>
+                        <span id="calibration-pitch-readout">No pitch detected</span>
+                      </div>
+                      <progress id="mic-level-meter" max="100" value="0" aria-label="Microphone input level"></progress>
+                    </div>
+                    <p class="helper-note">Audio is analyzed live in local memory (AudioWorklet + Web Worker) and is never recorded or transmitted.</p>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </details>
+      </aside>
+    </main>
+
+    <aside class="privacy-banner" id="privacy-banner" aria-label="Local privacy notice">
+      <p class="footer-note">
+        <strong>100% Local &amp; Private:</strong> Microphone audio, MIDI files, calibration, and personal scores stay on your device — nothing is uploaded or tracked.
+      </p>
+      <button type="button" id="dismiss-privacy-banner-btn" class="btn icon-btn btn-sm" aria-label="Dismiss local privacy notice">✕</button>
+    </aside>
+  </div>
+
+  <!-- Screen 2: Full-Screen Practice Highway Stage -->
+  <section id="stage-screen" class="stage-screen" aria-label="Highway practice stage" hidden>
+    <div class="stage-hud">
+      <div class="transport-controls">
+        <button type="button" id="open-pause-menu-btn" class="btn secondary btn-sm" title="Pause &amp; Setup Menu (Esc)">☰ Pause (Esc)</button>
+        <button type="button" id="play-pause-btn" class="btn primary btn-sm" title="Play or Pause Highway (Space)">Pause</button>
+        <button type="button" id="restart-btn" class="btn secondary btn-sm">Restart</button>
+        <button type="button" id="skip-wait-btn" class="btn secondary btn-sm" hidden>Skip (Space)</button>
+        <div class="loop-controls" role="group" aria-label="A-B Loop trainer">
+          <button type="button" id="loop-a-btn" class="btn secondary btn-sm">Set A</button>
+          <button type="button" id="loop-b-btn" class="btn secondary btn-sm">Set B</button>
+          <button type="button" id="loop-clear-btn" class="btn secondary btn-sm" hidden>Clear</button>
+        </div>
+      </div>
+
+      <div class="progress-wrap">
+        <progress id="song-progress" max="100" value="0" aria-label="Song progress (click to seek)"></progress>
+        <span class="time-readout" id="time-readout">0:00 / 0:00</span>
+        <span class="loop-badge" id="loop-status-pill" hidden></span>
+      </div>
+
+      <dl class="score-strip">
+        <div>
+          <dt>Score</dt>
+          <dd id="hud-score">0</dd>
+        </div>
+        <div>
+          <dt>Combo</dt>
+          <dd id="hud-combo">0x</dd>
+        </div>
+        <div>
+          <dt>Accuracy</dt>
+          <dd id="hud-accuracy">100%</dd>
+        </div>
+        <div>
+          <dt>Best</dt>
+          <dd id="hud-best" title="Personal best for current song, track, instrument &amp; mode">—</dd>
+        </div>
+      </dl>
+
+      <div class="segmented hud-view-toggle" role="group" aria-label="Highway view mode">
+        <label class="mode-pill">
+          <input type="radio" name="view-mode" value="2d">
+          <span>2D</span>
+        </label>
+        <label class="mode-pill">
+          <input type="radio" name="view-mode" value="3d">
+          <span>3D</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="canvas-shell" id="canvas-shell">
+      <canvas id="highway-canvas" aria-label="Scrolling instrument fingering highway"></canvas>
+    </div>
+  </section>
+
+  <!-- Pause Menu (Live Setup & Navigation — Never Cluttered with Song Library) -->
+  <dialog id="pause-dialog" closedby="any" aria-labelledby="pause-dialog-title">
+    <div class="dialog-header">
+      <div>
+        <h2 id="pause-dialog-title">Paused</h2>
+        <p class="helper-note" id="pause-song-label">Ode to Joy</p>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="btn icon-btn" aria-label="Close Pause menu">✕</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <div class="pause-actions-row">
+        <button type="button" id="resume-play-btn" class="btn primary" autofocus>▶ Resume (Enter)</button>
+        <button type="button" id="pause-restart-btn" class="btn secondary">↺ Restart</button>
+        <button type="button" id="back-to-library-btn" class="btn secondary">⇄ Song Library</button>
+      </div>
+
+      <div class="setup-group">
+        <span class="field-label">Instrument</span>
+        <div class="segmented" role="group" aria-label="Switch instrument while paused">
+          <label class="mode-pill">
+            <input type="radio" name="pause-instrument" value="violin">
+            <span>Violin (Mic)</span>
+          </label>
+          <label class="mode-pill">
+            <input type="radio" name="pause-instrument" value="saxophone">
+            <span>Saxophone (Mic)</span>
+          </label>
+          <label class="mode-pill">
+            <input type="radio" name="pause-instrument" value="piano">
+            <span>Piano (MIDI / Keys)</span>
+          </label>
+        </div>
+
+        <div class="slider-row">
+          <div class="slider-head">
+            <label for="pause-tempo-slider">Tempo</label>
+            <output id="pause-tempo-output" for="pause-tempo-slider">100%</output>
+          </div>
+          <input type="range" id="pause-tempo-slider" min="25" max="150" step="5" value="100">
+        </div>
+      </div>
+
+      <div id="pause-setup-slot" class="setup-slot"></div>
+    </div>
+    <div class="dialog-footer dialog-footer-split">
+      <button type="button" id="pause-legal-btn" class="btn secondary btn-sm">Privacy &amp; Legal</button>
+      <form method="dialog">
+        <button type="submit" class="btn secondary btn-sm">Stay Paused (Esc)</button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="legal-dialog" closedby="any" aria-labelledby="legal-dialog-title">
+    <div class="dialog-header">
+      <h2 id="legal-dialog-title">Privacy, Local Data &amp; Legal Notice</h2>
+      <form method="dialog">
+        <button type="submit" class="btn icon-btn" aria-label="Close Privacy and Legal dialog">✕</button>
+      </form>
+    </div>
+    <div class="dialog-body">
+      <section class="legal-section">
+        <h3>100% On-Device Processing</h3>
+        <p class="helper-note">
+          Buskero runs completely inside your browser with zero backend servers, zero analytics, zero tracking cookies, and a strict <code>connect-src 'none'</code> Content Security Policy that blocks outbound network connections.
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h3>Microphone &amp; Web MIDI Data</h3>
+        <p class="helper-note">
+          When enabled for Violin or Saxophone, microphone audio is processed transiently in RAM via Web Audio (<code>AudioWorklet</code> + <code>Web Worker</code>) solely for real-time YIN pitch detection. Audio waveforms are never recorded, saved to disk, or sent off your device. Hardware Web MIDI events are read locally for note matching.
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h3>Local Browser Storage (Under Your Control)</h3>
+        <ul class="legal-list">
+          <li><strong>Uploaded MIDI Songs (<code>IndexedDB</code>):</strong> Custom <code>.mid</code> / <code>.midi</code> files you import remain stored locally in your browser so they stay ready across reloads.</li>
+          <li><strong>Preferences &amp; Personal Scores (<code>localStorage</code>):</strong> Active instrument, folder tree state, 2D/3D view mode, mic &amp; horn calibration offsets, track transpose settings, and your own personal-best track scores are stored locally only.</li>
+        </ul>
+        <p class="status-pill" id="legal-storage-summary">Inspecting local browser storage…</p>
+        <div class="input-actions">
+          <button type="button" id="clear-songs-btn" class="btn secondary">Delete Uploaded Songs</button>
+          <button type="button" id="clear-all-data-btn" class="btn danger-btn">Erase All Local Data</button>
+        </div>
+      </section>
+
+      <section class="legal-section">
+        <h3>Copyright &amp; Software Warranty (MIT)</h3>
+        <p class="helper-note">
+          Built-in practice pieces are public-domain melodies generated procedurally. You are responsible for ensuring you hold rights to any third-party MIDI files you import into your local browser. Buskero is open-source software licensed under the MIT License and provided &ldquo;AS IS&rdquo; without warranty of any kind.
+        </p>
+      </section>
+    </div>
+    <form method="dialog" class="dialog-footer">
+      <button type="submit" class="btn primary" autofocus>Close</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="src/main.mjs"></script>
+</body>
+</html>
