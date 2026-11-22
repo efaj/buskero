@@ -195,3 +195,141 @@ export function getHighwayConfig(options = {}) {
     ],
   };
 }
+
+/**
+ * Compute an integer octave shift (-2..+2) that maximizes the number of notes
+ * inside the standard written saxophone range [58..90] (Bb3..F#6).
+ */
+export function autoFitSaxOctave(notes, saxTransposition = 'alto_eb') {
+  if (!notes || notes.length === 0) return 0;
+  const transposition = SAX_TRANSPOSITIONS[saxTransposition] ?? SAX_TRANSPOSITIONS.alto_eb;
+  let bestShift = 0;
+  let bestScore = -1;
+
+  for (const shift of [0, 1, -1, 2, -2]) {
+    let inRange = 0;
+    let comfortBonus = 0;
+    for (const note of notes) {
+      const written = note.midi + shift * 12 + transposition.writtenOffset;
+      if (written >= 58 && written <= 90) {
+        inRange += 1;
+        // Prefer middle register (62..83) over extreme altissimo/low notes
+        if (written >= 62 && written <= 83) comfortBonus += 0.2;
+      }
+    }
+    const score = inRange + comfortBonus;
+    if (score > bestScore || (score === bestScore && Math.abs(shift) < Math.abs(bestShift))) {
+      bestScore = score;
+      bestShift = shift;
+    }
+  }
+  return bestShift;
+}
+
+/**
+ * Classify which saxophone transposition and tuning offset the player has
+ * when fingering Written B4 (Left Index L1 only).
+ * @param {number} detectedMidiFloat - raw uncalibrated concert MIDI float from mic
+ */
+export function classifySaxCalibrationNote(detectedMidiFloat) {
+  const nearest = Math.round(detectedMidiFloat);
+  const pc = ((nearest % 12) + 12) % 12;
+  const tuningOffsetCents = Math.round((detectedMidiFloat - nearest) * 100);
+
+  if (pc === 2) {
+    return {
+      saxTransposition: 'alto_eb',
+      label: SAX_TRANSPOSITIONS.alto_eb.label,
+      targetConcertMidi: nearest,
+      tuningOffsetCents,
+    };
+  }
+  if (pc === 9 && nearest <= 63) {
+    return {
+      saxTransposition: 'tenor_bb',
+      label: SAX_TRANSPOSITIONS.tenor_bb.label,
+      targetConcertMidi: nearest,
+      tuningOffsetCents,
+    };
+  }
+  if (pc === 9 && nearest >= 64) {
+    return {
+      saxTransposition: 'soprano_bb',
+      label: SAX_TRANSPOSITIONS.soprano_bb.label,
+      targetConcertMidi: nearest,
+      tuningOffsetCents,
+    };
+  }
+  if (pc === 11) {
+    return {
+      saxTransposition: 'concert_c',
+      label: SAX_TRANSPOSITIONS.concert_c.label,
+      targetConcertMidi: nearest,
+      tuningOffsetCents,
+    };
+  }
+  return {
+    saxTransposition: null,
+    label: null,
+    nearestMidi: nearest,
+    targetConcertMidi: nearest,
+    tuningOffsetCents,
+  };
+}
+
+/**
+ * Map a concert MIDI note to the laid-down 11-lane Saxophone key stack.
+ * IMPORTANT: targetMidi stays in CONCERT pitch for microphone & synth matching,
+ * while fingering lookup uses writtenMidi = targetMidi + writtenOffset.
+ */
+export function mapNoteToHighway(concertMidi, context = {}) {
+  const transpositionKey = context.saxTransposition ?? 'alto_eb';
+  const transposition = SAX_TRANSPOSITIONS[transpositionKey] ?? SAX_TRANSPOSITIONS.alto_eb;
+  const targetMidi = Math.round(concertMidi);
+  const rawWrittenMidi = targetMidi + transposition.writtenOffset;
+  const concertName = midiToNoteName(targetMidi);
+
+  let clampedWritten = rawWrittenMidi;
+  let outOfRange = false;
+  let rangeBadge = '';
+
+  if (rawWrittenMidi < 58) {
+    outOfRange = true;
+    while (clampedWritten < 58) clampedWritten += 12;
+    rangeBadge = '↓8va ';
+  } else if (rawWrittenMidi > 90) {
+    outOfRange = true;
+    while (clampedWritten > 90) clampedWritten -= 12;
+    rangeBadge = '↑8va ';
+  }
+
+  const writtenName = midiToSaxNoteName(rawWrittenMidi);
+  const fingering = getStandardFingering(clampedWritten) ?? { lanes: [], badges: {}, openNote: true };
+  const laneIndices = [...fingering.lanes];
+  const openNote = Boolean(fingering.openNote);
+  const primaryLane = laneIndices.length > 0 ? laneIndices[0] : 5;
+
+  const hasOctave = laneIndices.includes(0);
+  const color = openNote ? '#a855f7' : hasOctave ? '#34d399' : '#38bdf8';
+
+  const laneBadges = {};
+  for (const idx of laneIndices) {
+    laneBadges[idx] = fingering.badges?.[idx] ?? SAX_LANES[idx].label;
+  }
+
+  return {
+    laneIndices,
+    primaryLane,
+    color,
+    shape: 'pill',
+    badgeText: openNote ? `OPEN ${writtenName}` : `${rangeBadge}${writtenName}`,
+    secondaryBadge: `Concert ${concertName}`,
+    targetMidi,
+    writtenMidi: rawWrittenMidi,
+    noteName: writtenName,
+    concertName,
+    outOfRange,
+    openNote,
+    laneBadges,
+  };
+}
