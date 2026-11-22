@@ -1,0 +1,26 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+coverage/
+test-results/
+.env
+.env.*
+
+# >>> crenet-governance >>>
+.agents/rules/governance
+.agents/hooks.json
+.claude/hooks/check_assets.sh
+.agents/skills/atomic-commit-chain
+.claude/skills/atomic-commit-chain
+.claude/settings.json
+.geminiignore
+.aiexclude
+.cursorignore
+.claudeignore
+.clineignore
+.rooignore
+.aiderignore
+.codeiumignore
+.rgignore
+# <<< crenet-governance <<<

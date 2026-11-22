@@ -1,0 +1,13 @@
+{
+  "sizing": {
+    "max_commit_lines": 200,
+    "max_pr_lines": 400,
+    "count_tests": false,
+    "count_comments": false
+  },
+  "coverage": {
+    "command": "npm run test:coverage",
+    "report_path": "coverage/lcov.info",
+    "mode": "warn"
+  }
+}
