@@ -217,6 +217,26 @@ function syncViewModeUI() {
   els.micToggleBtn.hidden = !isMic;
   els.micCalibrationFields.hidden = !isMic;
   els.midiConnectBtn.hidden = isMic;
+
+  if (state.instrumentId === 'piano') {
+    midiInput.enableKeyboardFallback();
+    syncMidiDeviceUI(midiInput.getStatus());
+  } else {
+    midiInput.disableKeyboardFallback();
+    midiInput.clearActiveKeys();
+  }
+}
+
+function syncBestScoreHUD() {
+  if (!state.currentSongId) {
+    els.hudBest.textContent = '—';
+    els.lobbyBest.textContent = '—';
+    return;
+  }
+  const best = localStore.getBestScore({
+    songId: state.currentSongId,
+    leadTrackIndex: state.leadTrackIndex,
+    instrumentId: state.instrumentId,
     playMode: state.playMode,
   });
   if (!best) {
@@ -311,6 +331,77 @@ function rebuildChartFromCurrentSong() {
   const shiftedNotes = leadTrack.notes.map((n) => ({
     ...n,
     midi: Math.max(21, Math.min(108, n.midi + state.octaveShift * 12 + state.semitoneTranspose)),
+  }));
+
+  const config = mod.getHighwayConfig({
+    notes: shiftedNotes,
+    saxTransposition: state.saxTransposition,
+  });
+
+  let prevMidi = null;
+  const mappedNotes = shiftedNotes.map((n) => {
+    const mapped = mod.mapNoteToHighway(n.midi, {
+      preferFourthFinger: state.violinPreferFourth,
+      saxTransposition: state.saxTransposition,
+      minKey: config.minKey,
+      maxKey: config.maxKey,
+      prevMidi,
+    });
+    prevMidi = n.midi;
+    return {
+      ...n,
+      ...mapped,
+    };
+  });
+
+  const backingNotes = [];
+  for (let i = 0; i < tracks.length; i += 1) {
+    if (i === state.leadTrackIndex) continue;
+    for (const n of tracks[i].notes) {
+      backingNotes.push({
+        ...n,
+        midi: Math.max(21, Math.min(108, n.midi + state.semitoneTranspose)),
+      });
+    }
+  }
+  backingNotes.sort((a, b) => a.startTime - b.startTime);
+
+  state.highwayConfig = config;
+  state.leadNotes = mappedNotes;
+  state.backingNotes = backingNotes;
+
+  game.setInstrument(state.instrumentId);
+  game.loadChart(mappedNotes, state.parsedMidi.durationSec);
+  synth.resetSchedule(game.songTime);
+
+  const shiftParts = [];
+  if (state.octaveShift !== 0) shiftParts.push(`${state.octaveShift > 0 ? '+' : ''}${state.octaveShift} oct`);
+  if (state.semitoneTranspose !== 0) {
+    shiftParts.push(`${state.semitoneTranspose > 0 ? '+' : ''}${state.semitoneTranspose} st`);
+  }
+  const shiftLabel = shiftParts.length > 0 ? ` (${shiftParts.join(', ')})` : '';
+  const localTag = state.currentSongIsCustom ? ' · Saved Locally' : '';
+  const metaLine = `${state.parsedMidi.bpm} BPM • ${leadTrack.name}${shiftLabel}${localTag}`;
+
+  els.selectedSongTitle.textContent = state.currentSongTitle;
+  els.songMeta.textContent = metaLine;
+  els.pauseSongLabel.textContent = `${state.currentSongTitle} • ${metaLine}`;
+
+  syncTracksPanel();
+  syncTransportUI();
+  syncBestScoreHUD();
+}
+
+function loadParsedSong(
+  parsedMidi,
+  title,
+  { songId, isCustom = false, folderPath = '', restoreSavedSettings = true } = {},
+) {
+  state.parsedMidi = parsedMidi;
+  state.currentSongId = songId;
+  state.currentSongIsCustom = isCustom;
+  state.currentSongFolder = normalizeFolderPath(folderPath);
+  state.currentSongTitle = title;
   els.hudAccuracy.textContent = `${snap.accuracy}%`;
 
   const hasA = snap.loopStartSec !== null;
@@ -363,6 +454,72 @@ function syncMidiDeviceUI(status) {
 async function togglePlayPause() {
   await synth.ensureContext();
   await mic.resumeIfSuspended();
+  state.micAutoManaged = false;
+  state.latestPitch = null;
+  state.latestRms = 0;
+  els.micToggleBtn.textContent = 'Enable Microphone';
+  if (isMicInstrument(state.instrumentId)) {
+    setInputStatus('Microphone disabled', 'idle');
+  }
+  if (!state.leadGuideUserOverride) {
+    els.leadVolSlider.value = '60';
+    els.leadVolOutput.textContent = '60%';
+    synth.setVolumes({ leadVolume: 0.6 });
+    localStore.savePreferences({ leadVolumePct: 60 });
+  }
+}
+
+async function enableMicrophone({ auto = false } = {}) {
+  if (!isMicInstrument(state.instrumentId)) return false;
+  try {
+    await mic.start({
+      roomFilterEnabled: state.roomFilterEnabled,
+      rmsThreshold: state.rmsThreshold,
+      tuningOffsetCents: state.tuningOffsetCents,
+    });
+    state.micActive = true;
+    state.micAutoManaged = auto;
+    els.micToggleBtn.textContent = 'Disable Microphone';
+    const modeTag = mic.mode === 'worklet-worker' ? 'Worker DSP' : 'Audio DSP';
+    setInputStatus(`Mic Live (${modeTag}): listening for pitch`, 'active');
+
+    if (!state.leadGuideUserOverride) {
+      els.leadVolSlider.value = '0';
+      els.leadVolOutput.textContent = '0%';
+      synth.setVolumes({ leadVolume: 0 });
+    }
+    return true;
+  } catch (err) {
+    state.micActive = false;
+    state.micAutoManaged = false;
+    els.micToggleBtn.textContent = 'Enable Microphone';
+    const reason = err?.message || 'Permission denied';
+    setInputStatus(
+      auto ? `Mic auto-start paused (${reason}) — click Enable Microphone` : `Mic Error: ${reason}`,
+      'error',
+    );
+    return false;
+  }
+}
+
+async function toggleMicrophone() {
+  if (state.micActive) {
+    disableMicrophone();
+  els.tempoSlider.value = String(pct);
+  els.tempoOutput.textContent = `${pct}%`;
+  els.pauseTempoSlider.value = String(pct);
+  els.pauseTempoOutput.textContent = `${pct}%`;
+  updateRangeProgressFallback(els.tempoSlider);
+  updateRangeProgressFallback(els.pauseTempoSlider);
+  game.setTempoScale(pct / 100);
+  if (persist) {
+    localStore.savePreferences({ tempoPct: pct });
+  }
+}
+
+function applyTuningOffsetCents(cents, { persist = true } = {}) {
+  const clamped = Math.max(-100, Math.min(100, Math.round(Number(cents) || 0)));
+  state.tuningOffsetCents = clamped;
   mic.setCalibration({ tuningOffsetCents: clamped });
   els.tuningOffsetSlider.value = String(clamped);
   els.tuningOffsetOutput.textContent = `${clamped > 0 ? '+' : ''}${clamped}¢`;
@@ -404,6 +561,65 @@ function setupDialogLightDismissFallback() {
     dialog.addEventListener('close', () => {
       dialog.returnValue = '';
     });
+  }
+}
+
+/**
+ * Decoupled ~60Hz audio/DSP simulation step so pitch polling & game timing stay
+ * responsive independently of 2D/3D visual rendering frame rate.
+ */
+function simulationTick() {
+  const now = performance.now();
+  const dt = state.lastSimTime ? (now - state.lastSimTime) / 1000 : 0.016;
+  state.lastSimTime = now;
+
+  if (state.micActive) {
+    const sampled = mic.samplePitch();
+    state.latestPitch = sampled.pitch;
+    state.latestRms = sampled.rms;
+  } else {
+    state.latestPitch = null;
+    state.latestRms = 0;
+  }
+
+  const snap = game.update(dt, {
+    pitch: state.latestPitch,
+    activeMidiKeys: midiInput.activeKeys,
+  });
+
+  if (snap.didLoopWrap) {
+    synth.resetSchedule(snap.songTime);
+  }
+
+  synth.scheduleWindow({
+    songTime: snap.songTime,
+    tempoScale: snap.tempoScale,
+    isPaused: !snap.isPlaying || snap.isWaiting,
+    leadNotes: state.leadNotes,
+    backingNotes: state.backingNotes,
+    instrumentId: state.instrumentId,
+  });
+
+  if (snap.justFinished && snap.qualifiesForHighScore && state.currentSongId) {
+    const { isNewBest } = localStore.recordCompletedRun({
+      songId: state.currentSongId,
+      leadTrackIndex: state.leadTrackIndex,
+      instrumentId: state.instrumentId,
+      playMode: state.playMode,
+      score: snap.score,
+      accuracy: snap.accuracy,
+      maxCombo: snap.maxCombo,
+      tempoPct: state.tempoPct,
+    });
+    if (isNewBest) {
+      game.lastJudgment = {
+        type: 'perfect',
+        label: 'NEW PERSONAL BEST!',
+        noteName: `${snap.score} pts`,
+        time: snap.songTime,
+      };
+    }
+    syncBestScoreHUD();
   }
 }
 
