@@ -792,6 +792,24 @@
     border-color: #ef4444;
   }
 
+  .input-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: safe center;
+    gap: 0.45rem;
+  }
+
+  .input-status-row > .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .input-status-row > .status-pill {
+    flex: 1 1 10rem;
+    min-inline-size: 0;
+    padding: 0.3rem 0.6rem;
+  }
+
   .loop-badge {
     padding: 0.18rem 0.5rem;
     border-radius: 999px;

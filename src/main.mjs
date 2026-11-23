@@ -20,6 +20,12 @@ const savedPrefs = localStore.loadPreferences();
 const gpuCapability = detect3DCapability();
 const frameBudgetMonitor = new FrameBudgetMonitor({ maxFrameMs: 45, windowSize: 90 });
 
+function getMicInstrumentKey(instrumentId = state.instrumentId) {
+  return instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+}
+
+const initialMicProfile = savedPrefs.micSettings[getMicInstrumentKey(savedPrefs.instrumentId)];
+
 const state = {
   screen: 'lobby', // 'lobby' | 'stage'
   instrumentId: savedPrefs.instrumentId,
@@ -49,9 +55,13 @@ const state = {
   libraryFilter: '',
   micActive: false,
   micAutoManaged: false,
-  rmsThreshold: savedPrefs.rmsThreshold,
-  tuningOffsetCents: savedPrefs.tuningOffsetCents,
-  roomFilterEnabled: savedPrefs.roomFilterEnabled,
+  micSettings: {
+    violin: { ...savedPrefs.micSettings.violin },
+    saxophone: { ...savedPrefs.micSettings.saxophone },
+  },
+  rmsThreshold: initialMicProfile.rmsThreshold,
+  tuningOffsetCents: initialMicProfile.tuningOffsetCents,
+  roomFilterEnabled: initialMicProfile.roomFilterEnabled,
   leadGuideUserOverride: savedPrefs.leadGuideUserOverride,
   lastFrameTime: 0,
   lastSimTime: 0,
@@ -115,11 +125,14 @@ const els = {
   leadVolSlider: document.getElementById('lead-vol-slider'),
   leadVolOutput: document.getElementById('lead-vol-output'),
   calibrationDetails: document.getElementById('calibration-details'),
+  calibrationSummary: document.getElementById('calibration-summary'),
   latencySlider: document.getElementById('latency-slider'),
   latencyOutput: document.getElementById('latency-output'),
   micCalibrationFields: document.getElementById('mic-calibration-fields'),
+  gateLabel: document.getElementById('gate-label'),
   gateSlider: document.getElementById('gate-slider'),
   gateOutput: document.getElementById('gate-output'),
+  tuningOffsetLabel: document.getElementById('tuning-offset-label'),
   tuningOffsetSlider: document.getElementById('tuning-offset-slider'),
   tuningOffsetOutput: document.getElementById('tuning-offset-output'),
   tuningOffsetResetBtn: document.getElementById('tuning-offset-reset-btn'),
@@ -262,6 +275,37 @@ function syncInstrumentPanels() {
     midiInput.disableKeyboardFallback();
     midiInput.clearActiveKeys();
   }
+}
+
+function syncMicProfileForInstrument(instrumentId = state.instrumentId) {
+  const isMic = isMicInstrument(instrumentId);
+  if (!isMic) {
+    els.calibrationSummary.textContent = 'Audio Latency Calibration';
+    return;
+  }
+
+  const key = getMicInstrumentKey(instrumentId);
+  const instName = key === 'saxophone' ? 'Saxophone' : 'Violin';
+  els.calibrationSummary.textContent = `Audio & ${instName} Mic Calibration`;
+  els.gateLabel.textContent = `${instName} Mic Sensitivity Gate (RMS)`;
+  els.tuningOffsetLabel.textContent = `${instName} Tuning Offset`;
+
+  const profile = state.micSettings[key];
+  state.rmsThreshold = profile.rmsThreshold;
+  state.tuningOffsetCents = profile.tuningOffsetCents;
+  state.roomFilterEnabled = profile.roomFilterEnabled;
+
+  els.gateSlider.value = String(Math.round(state.rmsThreshold * 1000));
+  els.gateOutput.textContent = state.rmsThreshold.toFixed(3);
+  els.tuningOffsetSlider.value = String(state.tuningOffsetCents);
+  els.tuningOffsetOutput.textContent = `${state.tuningOffsetCents > 0 ? '+' : ''}${state.tuningOffsetCents}¢`;
+  els.roomFilterCheckbox.checked = state.roomFilterEnabled;
+  updateRangeProgressFallback(els.gateSlider);
+  updateRangeProgressFallback(els.tuningOffsetSlider);
+  mic.setCalibration({
+    rmsThreshold: state.rmsThreshold,
+    tuningOffsetCents: state.tuningOffsetCents,
+  });
 }
 
 function syncBestScoreHUD() {
@@ -828,15 +872,20 @@ function applyTempoPct(rawPct, { persist = true } = {}) {
   }
 }
 
-function applyTuningOffsetCents(cents, { persist = true } = {}) {
+function applyTuningOffsetCents(cents, { persist = true, instrumentId = state.instrumentId } = {}) {
   const clamped = Math.max(-100, Math.min(100, Math.round(Number(cents) || 0)));
-  state.tuningOffsetCents = clamped;
-  mic.setCalibration({ tuningOffsetCents: clamped });
-  els.tuningOffsetSlider.value = String(clamped);
-  els.tuningOffsetOutput.textContent = `${clamped > 0 ? '+' : ''}${clamped}¢`;
-  updateRangeProgressFallback(els.tuningOffsetSlider);
+  const key = getMicInstrumentKey(instrumentId);
+  state.micSettings[key].tuningOffsetCents = clamped;
+
+  if (getMicInstrumentKey(state.instrumentId) === key) {
+    state.tuningOffsetCents = clamped;
+    mic.setCalibration({ tuningOffsetCents: clamped });
+    els.tuningOffsetSlider.value = String(clamped);
+    els.tuningOffsetOutput.textContent = `${clamped > 0 ? '+' : ''}${clamped}¢`;
+    updateRangeProgressFallback(els.tuningOffsetSlider);
+  }
   if (persist) {
-    localStore.savePreferences({ tuningOffsetCents: clamped });
+    localStore.saveMicSettings(key, { tuningOffsetCents: clamped });
   }
 }
 
@@ -881,15 +930,15 @@ async function calibrateSaxHorn() {
 
     samples.sort((a, b) => a - b);
     const medianRawMidi = samples[Math.floor(samples.length / 2)];
-    const result = classifySaxCalibrationNote(medianRawMidi);
-    const clampedOffset = Math.max(-60, Math.min(60, result.tuningOffsetCents));
+    const result = classifySaxCalibrationNote(medianRawMidi, { preferredTransposition: state.saxTransposition });
+    const clampedOffset = Math.max(-100, Math.min(100, result.tuningOffsetCents));
     const sign = clampedOffset > 0 ? '+' : '';
 
     if (result.saxTransposition) {
       state.saxTransposition = result.saxTransposition;
       els.saxTranspositionSelect.value = result.saxTransposition;
       localStore.savePreferences({ saxTransposition: result.saxTransposition });
-      applyTuningOffsetCents(clampedOffset);
+      applyTuningOffsetCents(clampedOffset, { persist: true, instrumentId: 'saxophone' });
       if (state.parsedMidi) {
         const track = state.parsedMidi.tracks[state.leadTrackIndex];
         state.octaveShift = autoFitSaxOctave(track?.notes ?? [], state.saxTransposition);
@@ -898,8 +947,7 @@ async function calibrateSaxHorn() {
       rebuildChartFromCurrentSong();
       els.saxCalibrateStatus.textContent = `Calibrated: ${result.label} • Concert ${midiToNoteName(result.targetConcertMidi)} (${sign}${clampedOffset}¢ offset applied).`;
     } else {
-      applyTuningOffsetCents(clampedOffset);
-      els.saxCalibrateStatus.textContent = `Heard Concert ${midiToNoteName(result.nearestMidi)} (${sign}${clampedOffset}¢ offset applied). Tip: Finger L1 only (written B4) to auto-detect Alto vs. Tenor.`;
+      els.saxCalibrateStatus.textContent = `Heard Concert ${midiToNoteName(result.nearestMidi)} — finger L1 only (written B4) and try again so horn transposition & tuning offset can be calibrated.`;
     }
   };
 
@@ -960,6 +1008,7 @@ async function handleInstrumentChange(nextInstrumentId) {
   localStore.savePreferences({ instrumentId: state.instrumentId });
   syncInstrumentRadios();
   syncInstrumentPanels();
+  syncMicProfileForInstrument(state.instrumentId);
 
   if (state.parsedMidi) {
     const savedSongCfg = localStore.getSongSettings(state.currentSongId);
@@ -978,6 +1027,8 @@ async function handleInstrumentChange(nextInstrumentId) {
   if (isMicInstrument(state.instrumentId)) {
     if (!state.micActive) {
       await enableMicrophone({ auto: true });
+    } else if (mic.roomFilterEnabled !== state.roomFilterEnabled) {
+      await enableMicrophone({ auto: state.micAutoManaged });
     } else {
       await mic.resumeIfSuspended();
     }
@@ -1110,12 +1161,7 @@ function applySavedPreferencesToUI() {
   els.latencySlider.value = String(savedPrefs.latencyOffsetMs);
   els.latencyOutput.textContent = `${savedPrefs.latencyOffsetMs} ms`;
 
-  els.gateSlider.value = String(Math.round(state.rmsThreshold * 1000));
-  els.gateOutput.textContent = state.rmsThreshold.toFixed(3);
-  mic.setCalibration({ rmsThreshold: state.rmsThreshold, tuningOffsetCents: state.tuningOffsetCents });
-
-  applyTuningOffsetCents(state.tuningOffsetCents, { persist: false });
-  els.roomFilterCheckbox.checked = state.roomFilterEnabled;
+  syncMicProfileForInstrument(state.instrumentId);
   els.lobbySetupDetails.open = !state.lobbySetupCollapsed;
   els.privacyBanner.hidden = state.privacyBannerDismissed;
 }
@@ -1374,6 +1420,10 @@ function bindEvents() {
     state.playMode = resetPrefs.playMode;
     state.tempoPct = resetPrefs.tempoPct;
     state.lookaheadSec = resetPrefs.lookaheadSec;
+    state.micSettings = {
+      violin: { ...resetPrefs.micSettings.violin },
+      saxophone: { ...resetPrefs.micSettings.saxophone },
+    };
     state.rmsThreshold = resetPrefs.rmsThreshold;
     state.tuningOffsetCents = resetPrefs.tuningOffsetCents;
     state.roomFilterEnabled = resetPrefs.roomFilterEnabled;
@@ -1424,10 +1474,12 @@ function bindEvents() {
 
   els.gateSlider.addEventListener('input', () => {
     const rms = Number(els.gateSlider.value) / 1000;
+    const key = getMicInstrumentKey();
     state.rmsThreshold = rms;
+    state.micSettings[key].rmsThreshold = rms;
     mic.setCalibration({ rmsThreshold: rms });
     els.gateOutput.textContent = rms.toFixed(3);
-    localStore.savePreferences({ rmsThreshold: rms });
+    localStore.saveMicSettings(key, { rmsThreshold: rms });
     updateRangeProgressFallback(els.gateSlider);
   });
 
@@ -1440,8 +1492,11 @@ function bindEvents() {
   });
 
   els.roomFilterCheckbox.addEventListener('change', async () => {
-    state.roomFilterEnabled = els.roomFilterCheckbox.checked;
-    localStore.savePreferences({ roomFilterEnabled: state.roomFilterEnabled });
+    const enabled = els.roomFilterCheckbox.checked;
+    const key = getMicInstrumentKey();
+    state.roomFilterEnabled = enabled;
+    state.micSettings[key].roomFilterEnabled = enabled;
+    localStore.saveMicSettings(key, { roomFilterEnabled: enabled });
     if (state.micActive) {
       await enableMicrophone({ auto: state.micAutoManaged });
     }
