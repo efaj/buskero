@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildScoreKey,
   createLocalStore,
+  DEFAULT_MIC_SETTINGS,
   DEFAULT_PREFERENCES,
   normalizeFolderPath,
   sanitizePreferences,
@@ -172,4 +173,34 @@ test('normalizeFolderPath, collapsedFolders, privacyBannerDismissed, and song fo
   await lib.clearFolderPrefixFromSongs('Classical');
   const list = await lib.listCustomSongs();
   assert.equal(list[0].folderPath, '');
+});
+
+test('localStore isolates micSettings per instrument and migrates legacy flat calibration cleanly', () => {
+  const store = createLocalStore({ storage: makeFakeLocalStorage() });
+  assert.deepEqual(store.getMicSettings('violin'), DEFAULT_MIC_SETTINGS);
+  assert.deepEqual(store.getMicSettings('saxophone'), DEFAULT_MIC_SETTINGS);
+
+  store.saveMicSettings('saxophone', {
+    tuningOffsetCents: -34,
+    rmsThreshold: 0.018,
+    roomFilterEnabled: true,
+  });
+
+  assert.deepEqual(store.getMicSettings('saxophone'), {
+    tuningOffsetCents: -34,
+    rmsThreshold: 0.018,
+    roomFilterEnabled: true,
+  });
+  assert.deepEqual(store.getMicSettings('violin'), DEFAULT_MIC_SETTINGS);
+
+  // Legacy flat preferences migrate onto the previously active instrument profile
+  const migrated = sanitizePreferences({
+    instrumentId: 'saxophone',
+    tuningOffsetCents: -28,
+    rmsThreshold: 0.016,
+  });
+  assert.equal(migrated.micSettings.saxophone.tuningOffsetCents, -28);
+  assert.equal(migrated.micSettings.saxophone.rmsThreshold, 0.016);
+  assert.deepEqual(migrated.micSettings.violin, DEFAULT_MIC_SETTINGS);
+  assert.equal(migrated.tuningOffsetCents, -28);
 });

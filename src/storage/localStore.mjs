@@ -22,6 +22,12 @@ export function normalizeFolderPath(raw) {
   return segments.join('/');
 }
 
+export const DEFAULT_MIC_SETTINGS = Object.freeze({
+  rmsThreshold: 0.012,
+  tuningOffsetCents: 0,
+  roomFilterEnabled: false,
+});
+
 export const DEFAULT_PREFERENCES = Object.freeze({
   instrumentId: 'violin',
   viewMode: 'auto',
@@ -34,9 +40,13 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   leadVolumePct: 60,
   leadGuideUserOverride: false,
   latencyOffsetMs: 0,
-  rmsThreshold: 0.012,
-  tuningOffsetCents: 0,
-  roomFilterEnabled: false,
+  rmsThreshold: DEFAULT_MIC_SETTINGS.rmsThreshold,
+  tuningOffsetCents: DEFAULT_MIC_SETTINGS.tuningOffsetCents,
+  roomFilterEnabled: DEFAULT_MIC_SETTINGS.roomFilterEnabled,
+  micSettings: Object.freeze({
+    violin: DEFAULT_MIC_SETTINGS,
+    saxophone: DEFAULT_MIC_SETTINGS,
+  }),
   selectedSongId: 'ode-to-joy',
   songSettings: {},
   collapsedFolders: [],
@@ -93,10 +103,37 @@ function sanitizeCustomFolders(raw) {
   return Array.from(seen).toSorted((a, b) => a.localeCompare(b));
 }
 
-export function sanitizePreferences(raw = {}) {
+function sanitizeMicProfile(raw, fallback = DEFAULT_MIC_SETTINGS) {
   const src = raw && typeof raw === 'object' ? raw : {};
   return {
-    instrumentId: VALID_INSTRUMENTS.has(src.instrumentId) ? src.instrumentId : DEFAULT_PREFERENCES.instrumentId,
+    rmsThreshold: Number(clampNumber(src.rmsThreshold, 0.004, 0.04, fallback.rmsThreshold).toFixed(3)),
+    tuningOffsetCents: Math.round(clampNumber(src.tuningOffsetCents, -100, 100, fallback.tuningOffsetCents)),
+    roomFilterEnabled:
+      src.roomFilterEnabled !== undefined ? Boolean(src.roomFilterEnabled) : Boolean(fallback.roomFilterEnabled),
+  };
+}
+
+export function sanitizePreferences(raw = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const instrumentId = VALID_INSTRUMENTS.has(src.instrumentId) ? src.instrumentId : DEFAULT_PREFERENCES.instrumentId;
+  const activeMicKey = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+  const legacyProfile = sanitizeMicProfile(src, DEFAULT_MIC_SETTINGS);
+
+  const micSettings =
+    src.micSettings && typeof src.micSettings === 'object'
+      ? {
+          violin: sanitizeMicProfile(src.micSettings.violin, DEFAULT_MIC_SETTINGS),
+          saxophone: sanitizeMicProfile(src.micSettings.saxophone, DEFAULT_MIC_SETTINGS),
+        }
+      : {
+          violin: activeMicKey === 'violin' ? legacyProfile : { ...DEFAULT_MIC_SETTINGS },
+          saxophone: activeMicKey === 'saxophone' ? legacyProfile : { ...DEFAULT_MIC_SETTINGS },
+        };
+
+  const activeProfile = micSettings[activeMicKey];
+
+  return {
+    instrumentId,
     viewMode: VALID_VIEW_MODES.has(src.viewMode) ? src.viewMode : DEFAULT_PREFERENCES.viewMode,
     playMode: VALID_PLAY_MODES.has(src.playMode) ? src.playMode : DEFAULT_PREFERENCES.playMode,
     tempoPct: Math.round(clampNumber(src.tempoPct, 25, 150, DEFAULT_PREFERENCES.tempoPct)),
@@ -109,9 +146,10 @@ export function sanitizePreferences(raw = {}) {
     leadVolumePct: Math.round(clampNumber(src.leadVolumePct, 0, 100, DEFAULT_PREFERENCES.leadVolumePct)),
     leadGuideUserOverride: Boolean(src.leadGuideUserOverride),
     latencyOffsetMs: Math.round(clampNumber(src.latencyOffsetMs, -150, 150, DEFAULT_PREFERENCES.latencyOffsetMs)),
-    rmsThreshold: Number(clampNumber(src.rmsThreshold, 0.004, 0.04, DEFAULT_PREFERENCES.rmsThreshold).toFixed(3)),
-    tuningOffsetCents: Math.round(clampNumber(src.tuningOffsetCents, -100, 100, DEFAULT_PREFERENCES.tuningOffsetCents)),
-    roomFilterEnabled: Boolean(src.roomFilterEnabled),
+    rmsThreshold: activeProfile.rmsThreshold,
+    tuningOffsetCents: activeProfile.tuningOffsetCents,
+    roomFilterEnabled: activeProfile.roomFilterEnabled,
+    micSettings,
     selectedSongId:
       typeof src.selectedSongId === 'string' && src.selectedSongId.length > 0
         ? src.selectedSongId
@@ -192,13 +230,59 @@ export function createLocalStore({ storage } = {}) {
 
   function savePreferences(patch = {}) {
     const current = loadPreferences();
+    const nextInstrument = VALID_INSTRUMENTS.has(patch.instrumentId) ? patch.instrumentId : current.instrumentId;
+    const targetMicKey = nextInstrument === 'saxophone' ? 'saxophone' : 'violin';
+
+    let nextMicSettings = current.micSettings;
+    if (patch.micSettings && typeof patch.micSettings === 'object') {
+      nextMicSettings = {
+        violin: { ...current.micSettings.violin, ...patch.micSettings.violin },
+        saxophone: { ...current.micSettings.saxophone, ...patch.micSettings.saxophone },
+      };
+    } else if (
+      patch.rmsThreshold !== undefined ||
+      patch.tuningOffsetCents !== undefined ||
+      patch.roomFilterEnabled !== undefined
+    ) {
+      nextMicSettings = {
+        ...current.micSettings,
+        [targetMicKey]: {
+          ...current.micSettings[targetMicKey],
+          ...(patch.rmsThreshold !== undefined ? { rmsThreshold: patch.rmsThreshold } : {}),
+          ...(patch.tuningOffsetCents !== undefined ? { tuningOffsetCents: patch.tuningOffsetCents } : {}),
+          ...(patch.roomFilterEnabled !== undefined ? { roomFilterEnabled: patch.roomFilterEnabled } : {}),
+        },
+      };
+    }
+
     const merged = sanitizePreferences({
       ...current,
       ...patch,
+      micSettings: nextMicSettings,
       songSettings: patch.songSettings ? { ...current.songSettings, ...patch.songSettings } : current.songSettings,
     });
     writeJson(PREFS_STORAGE_KEY, merged);
     return merged;
+  }
+
+  function getMicSettings(instrumentId = 'violin') {
+    const prefs = loadPreferences();
+    const key = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+    return { ...prefs.micSettings[key] };
+  }
+
+  function saveMicSettings(instrumentId, micPatch = {}) {
+    const current = loadPreferences();
+    const key = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+    return savePreferences({
+      micSettings: {
+        ...current.micSettings,
+        [key]: {
+          ...current.micSettings[key],
+          ...micPatch,
+        },
+      },
+    });
   }
 
   function saveSongSettings(songId, settings) {
@@ -296,6 +380,8 @@ export function createLocalStore({ storage } = {}) {
   return {
     loadPreferences,
     savePreferences,
+    getMicSettings,
+    saveMicSettings,
     saveSongSettings,
     getSongSettings,
     getBestScore,
