@@ -42,7 +42,7 @@ jobs:
           python-version: '3.14'
 
       - name: Install ScanCode Toolkit
-        run: pip install scancode-toolkit
+        run: pip install "pluggy<1.6.0" scancode-toolkit
 
       - name: Scan source tree for disallowed licenses
         run: |
