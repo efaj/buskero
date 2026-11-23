@@ -89,6 +89,12 @@ test('Saxophone transposition keeps concert targetMidi for mic while mapping wri
   assert.equal(saxophone.classifySaxCalibrationNote(57.1).saxTransposition, 'tenor_bb');
   assert.equal(saxophone.classifySaxCalibrationNote(69.0).saxTransposition, 'soprano_bb');
   assert.equal(saxophone.classifySaxCalibrationNote(71.0).saxTransposition, 'concert_c');
+
+  // Wide offset (>50c flat/sharp) respects preferredTransposition instead of wrapping across semitones
+  const calWideFlat = saxophone.classifySaxCalibrationNote(61.35, { preferredTransposition: 'alto_eb' });
+  assert.equal(calWideFlat.saxTransposition, 'alto_eb');
+  assert.equal(calWideFlat.targetConcertMidi, 62);
+  assert.equal(calWideFlat.tuningOffsetCents, -65);
 });
 
 test('Piano frames octave bounds cleanly and computes black/white geometry', () => {

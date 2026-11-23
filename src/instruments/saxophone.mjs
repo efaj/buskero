@@ -231,7 +231,7 @@ export function autoFitSaxOctave(notes, saxTransposition = 'alto_eb') {
  * when fingering Written B4 (Left Index L1 only).
  * @param {number} detectedMidiFloat - raw uncalibrated concert MIDI float from mic
  */
-export function classifySaxCalibrationNote(detectedMidiFloat) {
+export function classifySaxCalibrationNote(detectedMidiFloat, options = {}) {
   const nearest = Math.round(detectedMidiFloat);
   const pc = ((nearest % 12) + 12) % 12;
   const tuningOffsetCents = Math.round((detectedMidiFloat - nearest) * 100);
@@ -268,6 +268,23 @@ export function classifySaxCalibrationNote(detectedMidiFloat) {
       tuningOffsetCents,
     };
   }
+
+  // Fallback for horns sharp/flat by more than ±50¢ relative to the currently selected transposition
+  const prefKey = options?.preferredTransposition;
+  const prefTrans = prefKey ? SAX_TRANSPOSITIONS[prefKey] : null;
+  if (prefTrans) {
+    const baseConcertB4 = 71 - prefTrans.writtenOffset;
+    const expectedConcertMidi = baseConcertB4 + 12 * Math.round((detectedMidiFloat - baseConcertB4) / 12);
+    if (Math.abs(detectedMidiFloat - expectedConcertMidi) <= 1.0) {
+      return {
+        saxTransposition: prefKey,
+        label: prefTrans.label,
+        targetConcertMidi: expectedConcertMidi,
+        tuningOffsetCents: Math.round((detectedMidiFloat - expectedConcertMidi) * 100),
+      };
+    }
+  }
+
   return {
     saxTransposition: null,
     label: null,
