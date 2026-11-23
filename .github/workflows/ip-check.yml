@@ -17,14 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '26'
 
       - name: Run Presubmit Audit
         run: npm run ip:check
@@ -34,15 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Install ScanCode Toolkit
-        run: pip install "pluggy<1.6.0" scancode-toolkit
+        run: pip install scancode-toolkit
 
       - name: Scan source tree for disallowed licenses
         run: |
@@ -54,7 +54,8 @@ jobs:
               for det in f.get("license_detections", []):
                   expr = det.get("license_expression_spdx", "")
                   if "Proprietary" in expr or "Commercial" in expr:
-                      print(f"Disallowed license expression in {f.get(\"path\")}: {expr}")
+                      fpath = f.get("path")
+                      print(f"Disallowed license expression in {fpath}: {expr}")
                       sys.exit(1)
           print("ScanCode check passed with zero disallowed license detections.")
           '
