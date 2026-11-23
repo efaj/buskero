@@ -1,4 +1,6 @@
 # Buskero: Arcade loop trainer for sax, violin & MIDI keys
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fefaj%2Fbuskero.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fefaj%2Fbuskero?ref=badge_shield)
+
 
 **Buskero** is a 100% local, zero-dependency, browser-based arcade practice trainer for real **Saxophone**, **Violin**, and **Piano / MIDI Keys**. Drop in any Standard MIDI (`.mid` / `.midi`) file (saved locally in `IndexedDB`), switch between **3D Stage** (hardware WebGL Guitar Hero-style perspective) and **2D Flat** views, loop tricky phrases with `Set A` / `Set B`, slow down tempo without changing pitch, and get instant **AudioWorklet + Web Worker YIN Pitch** or **Web MIDI** feedback on flipped, finger-first highways.
 
@@ -118,3 +120,6 @@ buskero/
 ## License
 
 Buskero is open-source software licensed under the [MIT License](LICENSE) and is provided **"AS IS"**, without warranty of any kind, express or implied.
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fefaj%2Fbuskero.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fefaj%2Fbuskero?ref=badge_large)
