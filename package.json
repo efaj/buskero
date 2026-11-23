@@ -7,7 +7,7 @@
   "description": "Buskero: Local-first arcade loop trainer for sax, violin & MIDI keys",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CReNET-Games/buskero.git"
+    "url": "git+https://github.com/efaj/buskero.git"
   },
   "scripts": {
     "dev": "node server.mjs",
