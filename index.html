@@ -242,11 +242,11 @@
               </div>
 
               <div class="setup-group">
-                <div class="input-actions">
+                <div class="input-status-row">
                   <button type="button" id="mic-toggle-btn" class="btn primary btn-sm">Enable Microphone</button>
                   <button type="button" id="midi-connect-btn" class="btn primary btn-sm" hidden>Connect MIDI</button>
+                  <p class="status-pill" id="input-status-pill" role="status">Input: Ready</p>
                 </div>
-                <p class="status-pill" id="input-status-pill" role="status">Input: Ready</p>
 
                 <div class="lobby-options-grid">
                   <div class="slider-row">
@@ -268,7 +268,7 @@
               </div>
 
               <details class="sub-disclosure" id="calibration-details">
-                <summary>Audio &amp; Mic Calibration</summary>
+                <summary id="calibration-summary">Audio &amp; Violin Mic Calibration</summary>
                 <div class="disclosure-body">
                   <div class="slider-row">
                     <div class="slider-head">
@@ -281,7 +281,7 @@
                   <div id="mic-calibration-fields" class="option-group">
                     <div class="slider-row">
                       <div class="slider-head">
-                        <label for="gate-slider">Mic Sensitivity Gate (RMS)</label>
+                        <label for="gate-slider" id="gate-label">Violin Mic Sensitivity Gate (RMS)</label>
                         <output id="gate-output" for="gate-slider">0.012</output>
                       </div>
                       <input type="range" id="gate-slider" min="4" max="40" step="2" value="12">
@@ -289,7 +289,7 @@
 
                     <div class="slider-row">
                       <div class="slider-head">
-                        <label for="tuning-offset-slider">Tuning Offset (Horn / Reference Pitch)</label>
+                        <label for="tuning-offset-slider" id="tuning-offset-label">Violin Tuning Offset</label>
                         <output id="tuning-offset-output" for="tuning-offset-slider">0¢</output>
                       </div>
                       <div class="inline-control-row">
