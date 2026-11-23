@@ -13,7 +13,7 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: release-please-oss/release-please-action@v4
+      - uses: release-please-oss/release-please-action@v6
         with:
           release-type: node
           config-overrides-json: >-
