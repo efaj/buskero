@@ -2,29 +2,33 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getHighwayConfig as getPianoConfig } from '../src/instruments/piano.mjs';
 import { getHighwayConfig as getSaxConfig } from '../src/instruments/saxophone.mjs';
-import { getHighwayConfig as getViolinConfig } from '../src/instruments/violin.mjs';
+import {
+  getHighwayConfig as getStringsConfig,
+  mapNoteToHighway as mapStringsNote,
+} from '../src/instruments/strings.mjs';
 import { BaseHighwayRenderer, createHighwayViewSwitcher } from '../src/ui/baseHighwayRenderer.mjs';
-import { Highway3DRenderer } from '../src/ui/highway3dRenderer.mjs';
+import { computeStringsRackMetrics, desaturateRgb, Highway3DRenderer } from '../src/ui/highway3dRenderer.mjs';
 import { Highway2DRenderer, HighwayRenderer } from '../src/ui/highwayRenderer.mjs';
+import { createDeckLayout, projectDeckPoint } from '../src/ui/perspective3d.mjs';
 
-function makeMock2DContext() {
+function makeMock2DContext(drawCalls = null) {
   const noop = () => {};
   return {
     save: noop,
     restore: noop,
     clearRect: noop,
-    fillRect: noop,
+    fillRect: (...args) => drawCalls?.fillRect.push(args),
     beginPath: noop,
     closePath: noop,
     moveTo: noop,
     lineTo: noop,
     quadraticCurveTo: noop,
-    arc: noop,
+    arc: (...args) => drawCalls?.arc.push(args),
     rect: noop,
     clip: noop,
     fill: noop,
     stroke: noop,
-    fillText: noop,
+    fillText: (...args) => drawCalls?.fillText.push(args),
     setTransform: noop,
     measureText: (t) => ({ width: String(t).length * 7 }),
   };
@@ -75,7 +79,7 @@ function makeMockWebGLContext() {
   };
 }
 
-function installDomShim() {
+function installDomShim(drawCalls = null) {
   const prevDoc = globalThis.document;
   const prevWin = globalThis.window;
 
@@ -117,10 +121,10 @@ function installDomShim() {
         return null;
       },
       getBoundingClientRect() {
-        return { left: 0, top: 0, width: 900, height: 580 };
+        return { left: 0, top: 0, width: el.width, height: el.height };
       },
       getContext(type) {
-        if (type === '2d') return makeMock2DContext();
+        if (type === '2d') return makeMock2DContext(drawCalls);
         if (type === 'webgl2' || type === 'webgl') return makeMockWebGLContext();
         return null;
       },
@@ -174,7 +178,7 @@ test('Highway2DRenderer and Highway3DRenderer implement the replaceable BaseHigh
       assert.equal(renderer.lookaheadSec, 3.0);
 
       // Render all 3 instruments interchangeably through the exact same interface
-      renderer.render({ ...frameBase, config: getViolinConfig() });
+      renderer.render({ ...frameBase, config: getStringsConfig() });
       renderer.render({ ...frameBase, config: getSaxConfig() });
       renderer.render({ ...frameBase, config: pianoCfg });
 
@@ -304,6 +308,154 @@ test('createHighwayViewSwitcher preserves synchronous WebGL fallback when 3D mou
 
     renderers['3d'].dispose();
     renderers['2d'].dispose();
+  } finally {
+    restoreDom();
+  }
+});
+
+test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-width open bars, bottom strike alignment, and top intonation gauge', () => {
+  const drawCalls = { fillRect: [], fillText: [], arc: [] };
+  const restoreDom = installDomShim(drawCalls);
+  try {
+    const container = globalThis.document.createElement('div');
+    const sharedCanvas = globalThis.document.createElement('canvas');
+    sharedCanvas.id = 'highway-canvas';
+    container.appendChild(sharedCanvas);
+
+    const r2d = new Highway2DRenderer({ canvas: sharedCanvas }).mount(container);
+    const r3d = new Highway3DRenderer().mount(container);
+
+    for (const presetId of ['violin_4', 'violin_5', 'viola_4']) {
+      drawCalls.fillText.length = 0;
+      const config = getStringsConfig({ stringsPreset: presetId });
+      const openMidi = config.legend[0].openMidi;
+      const openNote = {
+        id: 0,
+        status: 'pending',
+        startTime: 0.4,
+        endTime: 1.0,
+        duration: 0.6,
+        ...mapStringsNote(openMidi, { stringsPreset: presetId }),
+      };
+      const fingeredNote = {
+        id: 1,
+        status: 'pending',
+        startTime: 1.1,
+        endTime: 1.5,
+        duration: 0.4,
+        ...mapStringsNote(openMidi + 2, { stringsPreset: presetId }),
+      };
+
+      const frame = {
+        config,
+        notes: [openNote, fingeredNote],
+        songTime: 0.35,
+        bpm: 120,
+        activeMidiKeys: new Set(),
+        detectedPitch: { nearestMidi: 69, noteName: 'A4', centsOff: -6, frequencyHz: 438.5, confidence: 0.92 },
+        gameSnapshot: {
+          isWaiting: true,
+          waitNotes: [openNote],
+          lastJudgment: null,
+          songTime: 0.35,
+        },
+        hitEffects: [
+          {
+            laneIndices: [],
+            openNote: true,
+            stringIndex: openNote.stringIndex,
+            stringId: openNote.stringId,
+            color: openNote.color,
+            life: 0.6,
+          },
+        ],
+      };
+
+      r2d.render(frame);
+      drawCalls.fillText.length = 0;
+      r3d.render(frame);
+      assert.ok(r3d.batch.vertexCount > 0);
+
+      // Verify bottom finger labels remain inside canvas bounds and Intonation Gauge is at top
+      const fingerLabelCalls = drawCalls.fillText.filter(([text]) => text === 'L1' || text === 'H3/L4');
+      assert.ok(fingerLabelCalls.length > 0);
+      for (const [, , y] of fingerLabelCalls) {
+        assert.ok(y <= 572 && y > 540, `bottom finger label y=${y} must sit cleanly below upright gate`);
+      }
+      const gaugeReadout = drawCalls.fillText.find(([text]) => String(text).startsWith('Detected: A4'));
+      assert.ok(gaugeReadout, '3D Strings must render detected pitch readout in top header');
+      assert.ok(gaugeReadout[2] < 56, `top Intonation Gauge readout y=${gaugeReadout[2]} must sit in top header`);
+    }
+
+    // Verify zero solid yellow overwrite, desaturated translucent untouched slots, and upright un-squashed strike alignment
+    const cfg4 = getStringsConfig({ stringsPreset: 'violin_4' });
+    const gOpenWait = {
+      id: 0,
+      status: 'pending',
+      startTime: 0.4,
+      endTime: 0.8,
+      duration: 0.4,
+      ...mapStringsNote(62, { stringsPreset: 'violin_4' }), // D4 stringIndex=1 -> row=2 (1 below A, 1 above G)
+    };
+    r3d.render({
+      config: cfg4,
+      notes: [gOpenWait],
+      songTime: 0.4,
+      bpm: 120,
+      activeMidiKeys: new Set(),
+      detectedPitch: null,
+      gameSnapshot: { isWaiting: true, waitNotes: [gOpenWait], lastJudgment: null, songTime: 0.4 },
+      hitEffects: [],
+    });
+
+    const data = r3d.batch.data;
+    let sawSolidYellow = false;
+    let sawTranslucentUntouched = false;
+    for (let v = 0; v < r3d.batch.vertexCount; v += 1) {
+      const r = data[v * 6 + 2];
+      const g = data[v * 6 + 3];
+      const b = data[v * 6 + 4];
+      const a = data[v * 6 + 5];
+      if (Math.abs(r - 0.98) < 0.08 && Math.abs(g - 0.78) < 0.08 && Math.abs(b - 0.18) < 0.08 && a > 0.85) {
+        sawSolidYellow = true;
+      }
+      if (a > 0.32 && a < 0.45) {
+        sawTranslucentUntouched = true;
+      }
+    }
+    assert.equal(sawSolidYellow, false, 'waiting note must keep true string color instead of solid yellow');
+    assert.equal(sawTranslucentUntouched, true, 'untouched strings in upright 3D block must render visibly');
+
+    // Verify desaturateRgb significantly reduces RGB chroma compared to vivid active string color
+    const vividCyan = [0.22, 0.74, 0.97];
+    const mutedCyan = desaturateRgb(vividCyan, 0.24, true);
+    const vividChroma = Math.max(...vividCyan) - Math.min(...vividCyan);
+    const mutedChroma = Math.max(...mutedCyan) - Math.min(...mutedCyan);
+    assert.ok(mutedChroma < vividChroma * 0.35, 'desaturateRgb must strongly reduce inactive string chroma');
+
+    // Verify upright 3D block row alignment at strike time (z = 0) & >= 4.5px un-squashed separation even at z = 0.9
+    const layout = createDeckLayout({ width: 900, height: 580, headerH: 56, footerH: 40, fovDepth: 2.15 });
+    const metrics = computeStringsRackMetrics(layout, 4);
+    const activeRow = 2; // D string on GDAE
+    const yBottomRow = projectDeckPoint(0.5, 0, metrics.hForRow(activeRow), layout).y;
+    const yBlockStrikeRow = projectDeckPoint(0.5, 0, metrics.hForRow(activeRow), layout).y;
+    assert.ok(
+      Math.abs(yBlockStrikeRow - yBottomRow) < 0.5,
+      'upright block active row must align directly with bottom gate',
+    );
+
+    for (const zCenter of [0, 0.5, 0.9]) {
+      const rowYs = [0, 1, 2, 3].map((row) => projectDeckPoint(0.5, zCenter, metrics.hForRow(row), layout).y);
+      for (let r = 1; r < rowYs.length; r += 1) {
+        assert.ok(
+          rowYs[r] - rowYs[r - 1] >= 4.5,
+          `upright string row ${r} must maintain >= 4.5px separation below row ${r - 1} at z=${zCenter}`,
+        );
+      }
+    }
+
+    r3d.dispose();
+    r2d.dispose();
   } finally {
     restoreDom();
   }

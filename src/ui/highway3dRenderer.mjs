@@ -584,11 +584,13 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       this._emitDeckQuad(0, 1, z, z + (isMeasure ? 0.011 : 0.005), 1, fretRgb, isMeasure ? 0.55 : 0.24, layout, bgRgb);
     }
 
-    // 4. Strike line bar at z = 0
-    const strikeRgb = gameSnapshot?.isWaiting ? [0.96, 0.62, 0.04] : railRgb;
-    this._emitExtrudedPrism(0, 1, -0.014, 0.014, 0, 4.5, strikeRgb, 0.95, layout, bgRgb);
+    // 4. Strike line bar at z = 0 (for Sax/Piano; Strings renders its upright bottom string gate in painter's order below)
+    const strikeRgb = gameSnapshot?.isWaiting && waitPrimaryColor ? waitPrimaryColor : railRgb;
+    if (!isStrings) {
+      this._emitExtrudedPrism(0, 1, -0.014, 0.014, 0, 4.5, strikeRgb, 0.95, layout, bgRgb);
+    }
 
-    // 5. Sort visible notes far-to-near (painter's order) and emit 3D sustains + extruded gems
+    // 5. Sort visible notes far-to-near (painter's order) and emit 3D sustains + extruded gems / upright string blocks
     const maxVisibleTime = songTime + this.lookaheadSec + 0.25;
     const minVisibleTime = songTime - 0.35;
     const visibleNotes = [];
@@ -601,118 +603,214 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     visibleNotes.sort((a, b) => b.startTime - a.startTime);
 
     const hudLabels = [];
-    for (const note of visibleNotes) {
-      const zNear = (note.startTime - songTime) / this.lookaheadSec;
-      if (zNear < -0.05 || zNear > 1.06) continue;
-      const zEnd = Math.min(1.06, Math.max(zNear + 0.045, (note.endTime - songTime) / this.lookaheadSec));
-      const isWaitingTarget = waitSet.has(note.id);
-      const alpha = note.status === 'miss' ? 0.32 : note.status === 'perfect' || note.status === 'good' ? 0.52 : 1;
-      const noteRgb = isWaitingTarget ? [0.98, 0.78, 0.18] : hexToRgb(note.color);
-      const gemDepth = 0.046;
-
-      if (config.id === 'saxophone' && note.openNote) {
-        const l1 = laneSpans[2];
-        const r3 = laneSpans[8];
-        if (l1 && r3) {
-          const arch = this._emitExtrudedPrism(
-            l1.u0 + 0.008,
-            r3.u1 - 0.008,
-            zNear,
-            Math.min(1.04, zNear + gemDepth),
-            2,
-            15,
-            [0.66, 0.33, 0.97],
-            alpha * 0.88,
-            layout,
-            bgRgb,
-          );
-          hudLabels.push({
-            kind: 'sax-open',
-            note,
-            alpha,
-            center: arch.center,
-          });
-        }
-        continue;
-      }
-
-      const activeLanes = config.id === 'saxophone' ? (note.laneIndices ?? []) : [note.primaryLane];
-      if (activeLanes.length === 0) continue;
-
-      if (config.id === 'saxophone' && activeLanes.length > 1) {
-        const first = laneSpans[activeLanes[0]];
-        const last = laneSpans[activeLanes[activeLanes.length - 1]];
-        if (first && last) {
-          this._emitExtrudedPrism(
-            first.uCenter,
-            last.uCenter,
-            zNear + gemDepth * 0.35,
-            Math.min(1.04, zNear + gemDepth * 0.65),
-            4,
-            10,
-            noteRgb,
-            alpha * 0.85,
-            layout,
-            bgRgb,
-          );
-        }
-      }
-
-      for (const laneIdx of activeLanes) {
-        const span = laneSpans[laneIdx];
-        if (!span) continue;
-        const inset = config.id === 'piano' ? span.uWidth * 0.08 : span.uWidth * 0.14;
-        const u0 = span.u0 + inset;
-        const u1 = span.u1 - inset;
-
-        // 3D Sustain Ribbon along the deck
-        if (zEnd - zNear > 0.06) {
-          const tailInset = (u1 - u0) * 0.28;
-          this._emitExtrudedPrism(
-            u0 + tailInset,
-            u1 - tailInset,
-            zNear + gemDepth * 0.6,
-            zEnd,
-            1.5,
-            7,
-            noteRgb,
-            alpha * 0.55,
-            layout,
-            bgRgb,
-          );
-        }
-
-        const gemRgb = config.id === 'saxophone' && span.isAccidental ? [0.96, 0.62, 0.04] : noteRgb;
-        const gemHeight = isWaitingTarget ? 22 : 17;
-        const prism = this._emitExtrudedPrism(
-          u0,
-          u1,
+    if (isStrings) {
+      const renderStringsBlock = (note) => {
+        const zNear = (note.startTime - songTime) / this.lookaheadSec;
+        if (zNear < -0.06 || zNear > 1.06) return;
+        const zEnd = Math.min(1.06, Math.max(zNear + 0.045, (note.endTime - songTime) / this.lookaheadSec));
+        const isWaitingTarget = waitSet.has(note.id);
+        const alpha = note.status === 'miss' ? 0.32 : note.status === 'perfect' || note.status === 'good' ? 0.52 : 1;
+        this._emitStringsNoteBlock(note, {
           zNear,
-          Math.min(1.05, zNear + gemDepth),
-          1.5,
-          gemHeight,
-          gemRgb,
-          alpha,
-          layout,
-          bgRgb,
-        );
-
-        hudLabels.push({
-          kind: config.id,
-          note,
-          span,
-          laneIdx,
+          zEnd,
           alpha,
           isWaitingTarget,
-          center: prism.center,
+          config,
+          laneSpans,
+          rackMetrics,
+          layout,
+          bgRgb,
+          isDark,
+          hudLabels,
         });
+      };
+
+      // Approaching blocks behind the z = 0 upright bottom string gate
+      for (const note of visibleNotes) {
+        const zNear = (note.startTime - songTime) / this.lookaheadSec;
+        if (zNear > 0.012) {
+          renderStringsBlock(note);
+        }
+      }
+
+      // Upright bottom string gate at z = 0
+      this._emitStringsBottomGate({
+        config,
+        rackMetrics,
+        highlightedStringIds,
+        railRgb,
+        layout,
+        bgRgb,
+        isDark,
+      });
+
+      // Blocks currently aligned at the z = 0 strike gate render cleanly in front
+      for (const note of visibleNotes) {
+        const zNear = (note.startTime - songTime) / this.lookaheadSec;
+        if (zNear <= 0.012) {
+          renderStringsBlock(note);
+        }
+      }
+    } else {
+      for (const note of visibleNotes) {
+        const zNear = (note.startTime - songTime) / this.lookaheadSec;
+        if (zNear < -0.05 || zNear > 1.06) continue;
+        const zEnd = Math.min(1.06, Math.max(zNear + 0.045, (note.endTime - songTime) / this.lookaheadSec));
+        const isWaitingTarget = waitSet.has(note.id);
+        const alpha = note.status === 'miss' ? 0.32 : note.status === 'perfect' || note.status === 'good' ? 0.52 : 1;
+        const noteRgb = hexToRgb(note.color);
+        const gemDepth = 0.046;
+
+        if (config.id === 'saxophone' && note.openNote) {
+          const l1 = laneSpans[2];
+          const r3 = laneSpans[8];
+          if (l1 && r3) {
+            const arch = this._emitExtrudedPrism(
+              l1.u0 + 0.008,
+              r3.u1 - 0.008,
+              zNear,
+              Math.min(1.04, zNear + gemDepth),
+              2,
+              15,
+              [0.66, 0.33, 0.97],
+              alpha * 0.88,
+              layout,
+              bgRgb,
+            );
+            hudLabels.push({
+              kind: 'sax-open',
+              note,
+              alpha,
+              center: arch.center,
+            });
+          }
+          continue;
+        }
+
+        const activeLanes = config.id === 'saxophone' ? (note.laneIndices ?? []) : [note.primaryLane];
+        if (activeLanes.length === 0) continue;
+
+        if (config.id === 'saxophone' && activeLanes.length > 1) {
+          const first = laneSpans[activeLanes[0]];
+          const last = laneSpans[activeLanes[activeLanes.length - 1]];
+          if (first && last) {
+            this._emitExtrudedPrism(
+              first.uCenter,
+              last.uCenter,
+              zNear + gemDepth * 0.35,
+              Math.min(1.04, zNear + gemDepth * 0.65),
+              4,
+              10,
+              noteRgb,
+              alpha * 0.85,
+              layout,
+              bgRgb,
+            );
+          }
+        }
+
+        for (const laneIdx of activeLanes) {
+          const span = laneSpans[laneIdx];
+          if (!span) continue;
+          const inset = config.id === 'piano' ? span.uWidth * 0.08 : span.uWidth * 0.14;
+          const u0 = span.u0 + inset;
+          const u1 = span.u1 - inset;
+
+          // 3D Sustain Ribbon along the deck
+          if (zEnd - zNear > 0.06) {
+            const tailInset = (u1 - u0) * 0.28;
+            this._emitExtrudedPrism(
+              u0 + tailInset,
+              u1 - tailInset,
+              zNear + gemDepth * 0.6,
+              zEnd,
+              1.5,
+              7,
+              noteRgb,
+              alpha * 0.55,
+              layout,
+              bgRgb,
+            );
+          }
+
+          const gemRgb = config.id === 'saxophone' && span.isAccidental ? [0.96, 0.62, 0.04] : noteRgb;
+          const gemHeight = isWaitingTarget ? 22 : 17;
+          const prism = this._emitExtrudedPrism(
+            u0,
+            u1,
+            zNear,
+            Math.min(1.05, zNear + gemDepth),
+            1.5,
+            gemHeight,
+            gemRgb,
+            alpha,
+            layout,
+            bgRgb,
+          );
+
+          hudLabels.push({
+            kind: config.id,
+            note,
+            span,
+            laneIdx,
+            alpha,
+            isWaitingTarget,
+            center: prism.center,
+          });
+        }
       }
     }
 
-    // 6. Hit effects along strike bar
+    // 6. Hit effects along strike bar / upright string gate
     for (const eff of hitEffects ?? []) {
-      const targets = eff.openNote ? [5] : (eff.laneIndices ?? []);
       const effRgb = hexToRgb(eff.color);
+      if (isStrings) {
+        const legend = config.legend ?? [];
+        const effStrIdx = Number.isInteger(eff.stringIndex)
+          ? eff.stringIndex
+          : Math.max(
+              0,
+              legend.findIndex((s) => s.id === eff.stringId),
+            );
+        const effRow = stringCount - 1 - Math.max(0, Math.min(stringCount - 1, effStrIdx));
+        const hCenter = rackMetrics.hForRow(effRow);
+        const halfPulse = 5 + (1 - eff.life) * 4;
+        if (eff.openNote) {
+          const expandU = (1 - eff.life) * 0.015;
+          this._emitExtrudedPrism(
+            0.008 - expandU,
+            0.992 + expandU,
+            -0.005,
+            0.006,
+            Math.max(1, hCenter - halfPulse),
+            hCenter + halfPulse,
+            effRgb,
+            Math.max(0, eff.life * 0.85),
+            layout,
+            bgRgb,
+          );
+          continue;
+        }
+        for (const laneIdx of eff.laneIndices ?? []) {
+          const span = laneSpans[laneIdx];
+          if (!span) continue;
+          const expandU = (1 - eff.life) * 0.02;
+          this._emitExtrudedPrism(
+            span.u0 - expandU,
+            span.u1 + expandU,
+            -0.005,
+            0.006,
+            Math.max(1, hCenter - halfPulse),
+            hCenter + halfPulse,
+            effRgb,
+            Math.max(0, eff.life * 0.85),
+            layout,
+            bgRgb,
+          );
+        }
+        continue;
+      }
+      const targets = eff.openNote ? [5] : (eff.laneIndices ?? []);
       for (const laneIdx of targets) {
         const span = laneSpans[laneIdx];
         if (!span) continue;
