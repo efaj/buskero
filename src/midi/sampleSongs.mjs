@@ -411,7 +411,7 @@ const RAW_SAMPLE_SPECS = [
   {
     id: 'chromatic-workout',
     title: 'Chromatic Finger Workout',
-    subtitle: 'All 8 Violin lanes (Open → L1 → 1 → L2 → H2 → 3 → H3 → 4) & Sax keys',
+    subtitle: 'Open string bar + all 7 Strings lanes (L1 → 1 → L2 → H2 → 3 → H3/L4 → 4) & Sax keys',
     bpm: 88,
     tracks: [
       {

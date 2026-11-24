@@ -19,7 +19,7 @@ function makeChart(items) {
 }
 
 test('Real-Time mode handles tempo scaling and Perfect/Good/Miss judgments', () => {
-  const engine = new GameEngine({ instrumentId: 'violin', mode: 'realtime' });
+  const engine = new GameEngine({ instrumentId: 'strings', mode: 'realtime' });
   engine.loadChart(
     makeChart([
       [69, 1.0],
@@ -152,7 +152,7 @@ test('A-B Loop wraps songTime at loopEndSec, resets looped notes, and preserves 
 });
 
 test('GameEngine qualifies clean full-song completions for personal hi-score and disqualifies loops/skips/seeks', () => {
-  const clean = new GameEngine({ instrumentId: 'violin', mode: 'realtime' });
+  const clean = new GameEngine({ instrumentId: 'strings', mode: 'realtime' });
   clean.loadChart(makeChart([[69, 0.5]]), 1.0);
   clean.songTime = 0.48;
   clean.isPlaying = true;
@@ -164,13 +164,13 @@ test('GameEngine qualifies clean full-song completions for personal hi-score and
   assert.equal(endSnap.qualifiesForHighScore, true);
 
   // Looping disqualifies hi-score
-  const looped = new GameEngine({ instrumentId: 'violin', mode: 'realtime' });
+  const looped = new GameEngine({ instrumentId: 'strings', mode: 'realtime' });
   looped.loadChart(makeChart([[69, 0.5]]), 2.0);
   looped.setLoopRange(0.2, 1.5);
   assert.equal(looped.getSnapshot().qualifiesForHighScore, false);
 
   // Skipping wait note disqualifies hi-score
-  const skipped = new GameEngine({ instrumentId: 'violin', mode: 'wait' });
+  const skipped = new GameEngine({ instrumentId: 'strings', mode: 'wait' });
   skipped.loadChart(makeChart([[69, 0.5]]), 1.0);
   skipped.songTime = 0.48;
   skipped.isPlaying = true;
@@ -179,7 +179,7 @@ test('GameEngine qualifies clean full-song completions for personal hi-score and
   assert.equal(skipped.getSnapshot().qualifiesForHighScore, false);
 
   // Seeking forward past pending notes disqualifies hi-score
-  const sought = new GameEngine({ instrumentId: 'violin', mode: 'realtime' });
+  const sought = new GameEngine({ instrumentId: 'strings', mode: 'realtime' });
   sought.loadChart(
     makeChart([
       [69, 0.5],

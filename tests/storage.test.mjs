@@ -25,17 +25,21 @@ test('localStore clamps invalid preferences and persists per-song track settings
 
   const saved = store.savePreferences({
     instrumentId: 'invalid-instrument',
+    stringsPreset: 'violin_5',
     viewMode: '3d',
     tempoPct: 999,
     tuningOffsetCents: -250,
     rmsThreshold: 0.001,
   });
 
-  assert.equal(saved.instrumentId, 'violin');
+  assert.equal(saved.instrumentId, 'strings');
+  assert.equal(saved.stringsPreset, 'violin_5');
   assert.equal(saved.viewMode, '3d');
   assert.equal(saved.tempoPct, 150);
   assert.equal(saved.tuningOffsetCents, -100);
   assert.equal(saved.rmsThreshold, 0.004);
+  assert.equal(store.savePreferences({ stringsPreset: 'bad-preset' }).stringsPreset, 'violin_4');
+  assert.equal(store.savePreferences({ stringsPreset: 'viola_4' }).stringsPreset, 'viola_4');
 
   store.saveSongSettings('custom:abc', { leadTrackIndex: 2, octaveShift: -1, semitoneTranspose: 3 });
   assert.deepEqual(store.getSongSettings('custom:abc'), {
@@ -48,7 +52,7 @@ test('localStore clamps invalid preferences and persists per-song track settings
 test('localStore starts with zero fake hi-scores and isolates personal records by track/instrument/mode', () => {
   const store = createLocalStore({ storage: makeFakeLocalStorage() });
   assert.equal(
-    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'violin', playMode: 'realtime' }),
+    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'strings', playMode: 'realtime' }),
     null,
   );
   assert.equal(store.getStorageSummary().scoreCount, 0);
@@ -56,7 +60,7 @@ test('localStore starts with zero fake hi-scores and isolates personal records b
   const run1 = store.recordCompletedRun({
     songId: 'ode-to-joy',
     leadTrackIndex: 0,
-    instrumentId: 'violin',
+    instrumentId: 'strings',
     playMode: 'realtime',
     score: 2400,
     accuracy: 92,
@@ -70,7 +74,7 @@ test('localStore starts with zero fake hi-scores and isolates personal records b
   const run2 = store.recordCompletedRun({
     songId: 'ode-to-joy',
     leadTrackIndex: 0,
-    instrumentId: 'violin',
+    instrumentId: 'strings',
     playMode: 'realtime',
     score: 1800,
     accuracy: 85,
@@ -83,18 +87,18 @@ test('localStore starts with zero fake hi-scores and isolates personal records b
 
   // Wait mode is stored separately from Real-Time mode
   assert.equal(
-    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'violin', playMode: 'wait' }),
+    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'strings', playMode: 'wait' }),
     null,
   );
   assert.notEqual(
-    buildScoreKey({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'violin', playMode: 'realtime' }),
-    buildScoreKey({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'violin', playMode: 'wait' }),
+    buildScoreKey({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'strings', playMode: 'realtime' }),
+    buildScoreKey({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'strings', playMode: 'wait' }),
   );
 
   store.clearAllLocalStore();
   assert.equal(store.getStorageSummary().scoreCount, 0);
   assert.equal(
-    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'violin', playMode: 'realtime' }),
+    store.getBestScore({ songId: 'ode-to-joy', leadTrackIndex: 0, instrumentId: 'strings', playMode: 'realtime' }),
     null,
   );
 });
@@ -177,7 +181,7 @@ test('normalizeFolderPath, collapsedFolders, privacyBannerDismissed, and song fo
 
 test('localStore isolates micSettings per instrument and migrates legacy flat calibration cleanly', () => {
   const store = createLocalStore({ storage: makeFakeLocalStorage() });
-  assert.deepEqual(store.getMicSettings('violin'), DEFAULT_MIC_SETTINGS);
+  assert.deepEqual(store.getMicSettings('strings'), DEFAULT_MIC_SETTINGS);
   assert.deepEqual(store.getMicSettings('saxophone'), DEFAULT_MIC_SETTINGS);
 
   store.saveMicSettings('saxophone', {
@@ -191,7 +195,7 @@ test('localStore isolates micSettings per instrument and migrates legacy flat ca
     rmsThreshold: 0.018,
     roomFilterEnabled: true,
   });
-  assert.deepEqual(store.getMicSettings('violin'), DEFAULT_MIC_SETTINGS);
+  assert.deepEqual(store.getMicSettings('strings'), DEFAULT_MIC_SETTINGS);
 
   // Legacy flat preferences migrate onto the previously active instrument profile
   const migrated = sanitizePreferences({
@@ -201,6 +205,23 @@ test('localStore isolates micSettings per instrument and migrates legacy flat ca
   });
   assert.equal(migrated.micSettings.saxophone.tuningOffsetCents, -28);
   assert.equal(migrated.micSettings.saxophone.rmsThreshold, 0.016);
-  assert.deepEqual(migrated.micSettings.violin, DEFAULT_MIC_SETTINGS);
+  assert.deepEqual(migrated.micSettings.strings, DEFAULT_MIC_SETTINGS);
   assert.equal(migrated.tuningOffsetCents, -28);
+
+  // Legacy 'violin' identifiers migrate seamlessly to canonical 'strings'
+  const migratedViolin = sanitizePreferences({
+    instrumentId: 'violin',
+    violinPreferFourth: true,
+    micSettings: {
+      violin: { tuningOffsetCents: 14, rmsThreshold: 0.016, roomFilterEnabled: false },
+    },
+  });
+  assert.equal(migratedViolin.instrumentId, 'strings');
+  assert.equal(migratedViolin.stringsPreferFourth, true);
+  assert.equal('violinPreferFourth' in migratedViolin, false);
+  assert.deepEqual(migratedViolin.micSettings.strings, {
+    tuningOffsetCents: 14,
+    rmsThreshold: 0.016,
+    roomFilterEnabled: false,
+  });
 });

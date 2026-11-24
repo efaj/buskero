@@ -141,7 +141,7 @@ export class SynthEngine {
     const filter = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
 
-    if (voiceType === 'violin') {
+    if (voiceType === 'strings') {
       osc.type = 'sawtooth';
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(Math.min(3400, freq * 3.8), when);
@@ -159,7 +159,7 @@ export class SynthEngine {
     osc.frequency.setValueAtTime(freq, when);
 
     const amp = Math.max(0.02, Math.min(0.28, (velocity / 127) * 0.22));
-    const attack = voiceType === 'violin' ? 0.045 : 0.015;
+    const attack = voiceType === 'strings' ? 0.045 : 0.015;
     const release = 0.06;
 
     gain.gain.setValueAtTime(0.0001, when);

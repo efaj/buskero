@@ -1,11 +1,17 @@
 export const PREFS_STORAGE_KEY = 'buskero:prefs:v1';
 export const SCORES_STORAGE_KEY = 'buskero:scores:v1';
 
-const VALID_INSTRUMENTS = new Set(['violin', 'saxophone', 'piano']);
+const VALID_INSTRUMENTS = new Set(['strings', 'saxophone', 'piano']);
 const VALID_VIEW_MODES = new Set(['auto', '2d', '3d']);
 const VALID_PLAY_MODES = new Set(['realtime', 'wait']);
+const VALID_STRINGS_PRESETS = new Set(['violin_4', 'violin_5', 'viola_4']);
 const VALID_SAX_TRANSPOSITIONS = new Set(['alto_eb', 'tenor_bb', 'soprano_bb', 'concert_c']);
 const RESERVED_FOLDER_NAMES = new Set(['built-in songs', 'built-in', 'uploaded songs', 'uploaded']);
+
+function normalizeInstrumentId(raw) {
+  if (raw === 'violin') return 'strings';
+  return VALID_INSTRUMENTS.has(raw) ? raw : DEFAULT_PREFERENCES.instrumentId;
+}
 
 export function normalizeFolderPath(raw) {
   if (typeof raw !== 'string') return '';
@@ -29,12 +35,13 @@ export const DEFAULT_MIC_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_PREFERENCES = Object.freeze({
-  instrumentId: 'violin',
+  instrumentId: 'strings',
   viewMode: 'auto',
   playMode: 'realtime',
   tempoPct: 100,
   lookaheadSec: 2.5,
-  violinPreferFourth: false,
+  stringsPreset: 'violin_4',
+  stringsPreferFourth: false,
   saxTransposition: 'alto_eb',
   backingVolumePct: 70,
   leadVolumePct: 60,
@@ -44,7 +51,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   tuningOffsetCents: DEFAULT_MIC_SETTINGS.tuningOffsetCents,
   roomFilterEnabled: DEFAULT_MIC_SETTINGS.roomFilterEnabled,
   micSettings: Object.freeze({
-    violin: DEFAULT_MIC_SETTINGS,
+    strings: DEFAULT_MIC_SETTINGS,
     saxophone: DEFAULT_MIC_SETTINGS,
   }),
   selectedSongId: 'ode-to-joy',
@@ -115,18 +122,18 @@ function sanitizeMicProfile(raw, fallback = DEFAULT_MIC_SETTINGS) {
 
 export function sanitizePreferences(raw = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
-  const instrumentId = VALID_INSTRUMENTS.has(src.instrumentId) ? src.instrumentId : DEFAULT_PREFERENCES.instrumentId;
-  const activeMicKey = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+  const instrumentId = normalizeInstrumentId(src.instrumentId);
+  const activeMicKey = instrumentId === 'saxophone' ? 'saxophone' : 'strings';
   const legacyProfile = sanitizeMicProfile(src, DEFAULT_MIC_SETTINGS);
 
   const micSettings =
     src.micSettings && typeof src.micSettings === 'object'
       ? {
-          violin: sanitizeMicProfile(src.micSettings.violin, DEFAULT_MIC_SETTINGS),
+          strings: sanitizeMicProfile(src.micSettings.strings ?? src.micSettings.violin, DEFAULT_MIC_SETTINGS),
           saxophone: sanitizeMicProfile(src.micSettings.saxophone, DEFAULT_MIC_SETTINGS),
         }
       : {
-          violin: activeMicKey === 'violin' ? legacyProfile : { ...DEFAULT_MIC_SETTINGS },
+          strings: activeMicKey === 'strings' ? legacyProfile : { ...DEFAULT_MIC_SETTINGS },
           saxophone: activeMicKey === 'saxophone' ? legacyProfile : { ...DEFAULT_MIC_SETTINGS },
         };
 
@@ -138,7 +145,8 @@ export function sanitizePreferences(raw = {}) {
     playMode: VALID_PLAY_MODES.has(src.playMode) ? src.playMode : DEFAULT_PREFERENCES.playMode,
     tempoPct: Math.round(clampNumber(src.tempoPct, 25, 150, DEFAULT_PREFERENCES.tempoPct)),
     lookaheadSec: Number(clampNumber(src.lookaheadSec, 1.5, 4.0, DEFAULT_PREFERENCES.lookaheadSec).toFixed(1)),
-    violinPreferFourth: Boolean(src.violinPreferFourth),
+    stringsPreset: VALID_STRINGS_PRESETS.has(src.stringsPreset) ? src.stringsPreset : DEFAULT_PREFERENCES.stringsPreset,
+    stringsPreferFourth: Boolean(src.stringsPreferFourth ?? src.violinPreferFourth),
     saxTransposition: VALID_SAX_TRANSPOSITIONS.has(src.saxTransposition)
       ? src.saxTransposition
       : DEFAULT_PREFERENCES.saxTransposition,
@@ -162,10 +170,10 @@ export function sanitizePreferences(raw = {}) {
   };
 }
 
-export function buildScoreKey({ songId, leadTrackIndex = 0, instrumentId = 'violin', playMode = 'realtime' }) {
+export function buildScoreKey({ songId, leadTrackIndex = 0, instrumentId = 'strings', playMode = 'realtime' }) {
   const safeSong = String(songId || 'unknown');
   const safeTrack = Math.max(0, Math.round(Number(leadTrackIndex) || 0));
-  const safeInst = VALID_INSTRUMENTS.has(instrumentId) ? instrumentId : 'violin';
+  const safeInst = normalizeInstrumentId(instrumentId);
   const safeMode = VALID_PLAY_MODES.has(playMode) ? playMode : 'realtime';
   return `${safeSong}::t${safeTrack}::${safeInst}::${safeMode}`;
 }
@@ -230,13 +238,14 @@ export function createLocalStore({ storage } = {}) {
 
   function savePreferences(patch = {}) {
     const current = loadPreferences();
-    const nextInstrument = VALID_INSTRUMENTS.has(patch.instrumentId) ? patch.instrumentId : current.instrumentId;
-    const targetMicKey = nextInstrument === 'saxophone' ? 'saxophone' : 'violin';
+    const nextInstrument =
+      patch.instrumentId !== undefined ? normalizeInstrumentId(patch.instrumentId) : current.instrumentId;
+    const targetMicKey = nextInstrument === 'saxophone' ? 'saxophone' : 'strings';
 
     let nextMicSettings = current.micSettings;
     if (patch.micSettings && typeof patch.micSettings === 'object') {
       nextMicSettings = {
-        violin: { ...current.micSettings.violin, ...patch.micSettings.violin },
+        strings: { ...current.micSettings.strings, ...(patch.micSettings.strings ?? patch.micSettings.violin) },
         saxophone: { ...current.micSettings.saxophone, ...patch.micSettings.saxophone },
       };
     } else if (
@@ -265,15 +274,15 @@ export function createLocalStore({ storage } = {}) {
     return merged;
   }
 
-  function getMicSettings(instrumentId = 'violin') {
+  function getMicSettings(instrumentId = 'strings') {
     const prefs = loadPreferences();
-    const key = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+    const key = instrumentId === 'saxophone' ? 'saxophone' : 'strings';
     return { ...prefs.micSettings[key] };
   }
 
   function saveMicSettings(instrumentId, micPatch = {}) {
     const current = loadPreferences();
-    const key = instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+    const key = instrumentId === 'saxophone' ? 'saxophone' : 'strings';
     return savePreferences({
       micSettings: {
         ...current.micSettings,
@@ -320,7 +329,7 @@ export function createLocalStore({ storage } = {}) {
   function recordCompletedRun({
     songId,
     leadTrackIndex = 0,
-    instrumentId = 'violin',
+    instrumentId = 'strings',
     playMode = 'realtime',
     score = 0,
     accuracy = 0,

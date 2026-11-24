@@ -2,7 +2,7 @@ export const DEFAULT_TIMING = {
   perfectWindowSec: 0.075,
   goodWindowSec: 0.16,
   waitHoldMs: 75,
-  violinPerfectCents: 35,
+  stringsPerfectCents: 35,
   saxPerfectCents: 50,
   maxPitchCents: 50,
   chordClusterSec: 0.035,
@@ -11,7 +11,7 @@ export const DEFAULT_TIMING = {
 export class GameEngine {
   constructor(options = {}) {
     this.timing = { ...DEFAULT_TIMING, ...(options.timing ?? {}) };
-    this.instrumentId = options.instrumentId ?? 'violin';
+    this.instrumentId = options.instrumentId ?? 'strings';
     this.mode = options.mode ?? 'realtime'; // 'realtime' | 'wait'
     this.tempoScale = options.tempoScale ?? 1.0;
     this.latencyOffsetMs = options.latencyOffsetMs ?? 0;
@@ -221,6 +221,8 @@ export class GameEngine {
     this.hitEffects.push({
       laneIndices: note.laneIndices,
       openNote: note.openNote,
+      stringIndex: note.stringIndex ?? null,
+      stringId: note.stringId ?? null,
       color: note.color,
       text: type === 'perfect' ? 'PERFECT' : 'GOOD',
       life: 1.0,
@@ -323,7 +325,7 @@ export class GameEngine {
         this._registerHit(note, type, delta);
       } else if (pitchMatched) {
         const perfectCents =
-          this.instrumentId === 'violin' ? this.timing.violinPerfectCents : this.timing.saxPerfectCents;
+          this.instrumentId === 'strings' ? this.timing.stringsPerfectCents : this.timing.saxPerfectCents;
         const isTightTime = Math.abs(delta) <= this.timing.perfectWindowSec;
         const isTightPitch = Math.abs(pitch.centsOff) <= perfectCents;
         const type = isTightTime && isTightPitch ? 'perfect' : 'good';

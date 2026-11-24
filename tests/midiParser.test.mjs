@@ -46,7 +46,7 @@ test('buildMidiBuffer and parseMidiBuffer handle round-trip notes, VLQ > 127, an
   assert.ok(Math.abs(lead.notes[2].startTime - 3.0) < 0.001);
   assert.ok(Math.abs(lead.notes[2].duration - 1.0) < 0.001);
 
-  const rec = recommendLeadTrack(parsed, 'violin');
+  const rec = recommendLeadTrack(parsed, 'strings');
   assert.equal(rec.leadTrackIndex, 0);
   assert.deepEqual(rec.backingTrackIndices, [1]);
 });

@@ -1,7 +1,7 @@
 import { midiToNoteName } from '../midi/midiParser.mjs';
 
 /**
- * Pure YIN monophonic pitch detector for Violin, Saxophone, and single-note Piano mic input.
+ * Pure YIN monophonic pitch detector for Strings (Violin / 5-String / Viola), Saxophone, and single-note Piano mic input.
  * Includes a weak-fundamental / strong-2nd-harmonic guard for conical-bore reed instruments
  * and optional horn tuning offset calibration in cents.
  * @param {Float32Array} buffer

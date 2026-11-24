@@ -549,21 +549,30 @@ export function buildMidiBuffer({
 }
 
 const COMFORTABLE_CONCERT_RANGES = {
-  violin: [55, 88],
+  strings: [55, 88],
   saxophone: [49, 81], // Alto Eb comfort concert range (~Db3..A5)
   piano: [48, 84],
 };
 
+function getStringsRange(stringsPreset) {
+  if (stringsPreset === 'violin_5') return [48, 88];
+  if (stringsPreset === 'viola_4') return [48, 80];
+  return COMFORTABLE_CONCERT_RANGES.strings;
+}
+
 /**
  * Recommend the best lead track, backing tracks, and octave shift for an instrument.
  */
-export function recommendLeadTrack(parsedMidi, instrumentId = 'violin') {
+export function recommendLeadTrack(parsedMidi, instrumentId = 'strings', options = {}) {
   const tracks = parsedMidi?.tracks ?? [];
   if (tracks.length === 0) {
     return { leadTrackIndex: 0, backingTrackIndices: [], suggestedOctaveShift: 0 };
   }
 
-  const [prefMin, prefMax] = COMFORTABLE_CONCERT_RANGES[instrumentId] ?? [55, 84];
+  const [prefMin, prefMax] =
+    instrumentId === 'strings'
+      ? getStringsRange(options.stringsPreset)
+      : (COMFORTABLE_CONCERT_RANGES[instrumentId] ?? [55, 84]);
   let bestIdx = 0;
   let bestScore = -Infinity;
 
@@ -575,7 +584,7 @@ export function recommendLeadTrack(parsedMidi, instrumentId = 'violin') {
     const rangePenalty = Math.abs(avgMidi - center) * 0.6;
 
     let score = Math.min(t.noteCount, 300) * 0.25 - rangePenalty;
-    if (instrumentId === 'violin' || instrumentId === 'saxophone') {
+    if (instrumentId === 'strings' || instrumentId === 'saxophone') {
       score += t.monophonyRatio * 120;
       if (t.program >= 40 && t.program <= 79) score += 25; // Strings / Winds
     } else {
@@ -590,6 +599,8 @@ export function recommendLeadTrack(parsedMidi, instrumentId = 'violin') {
       lowerName.includes('lead') ||
       lowerName.includes('solo') ||
       lowerName.includes('violin') ||
+      lowerName.includes('viola') ||
+      lowerName.includes('string') ||
       lowerName.includes('sax')
     ) {
       score += 40;
