@@ -849,12 +849,14 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       gl.drawArrays(gl.TRIANGLES, 0, this.batch.vertexCount);
     }
 
-    // 9. Crisp 2D HUD Overlay (Violin shapes, note/finger badges, headers, Intonation Gauge)
+    // 9. Crisp 2D HUD Overlay (Strings badges, note/finger labels, headers, Intonation Gauge)
     this._renderHudOverlay(this.hudCtx, {
       width,
       height,
       headerH,
       layout,
+      rackMetrics,
+      highlightedStringIds,
       laneSpans,
       config,
       hudLabels,
@@ -1130,7 +1132,7 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       ctx.restore();
     }
 
-    // Receptor / Piano keybed labels
+    // Receptor / Piano keybed / Bottom Strings labels
     if (config.id === 'piano') {
       for (const q of this.pianoHitQuads) {
         if (q.isBlack) continue;
@@ -1142,9 +1144,67 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
           ctx.fillText(q.span.sublabel, q.center.x, q.center.y + 8);
         }
       }
+    } else if (config.id === 'strings') {
+      const legend = config.legend ?? [];
+      const sCount = Math.max(1, legend.length);
+      const hasHighlight = highlightedStringIds.size > 0;
+      for (let row = 0; row < sCount; row += 1) {
+        const str = legend[sCount - 1 - row];
+        if (!str) continue;
+        const hStr = rackMetrics.hForRow(row);
+        const leftPt = projectDeckPoint(0, 0, hStr, layout);
+        const rightPt = projectDeckPoint(1, 0, hStr, layout);
+        const isLit = highlightedStringIds.has(str.id);
+        const badgeBg = isDark ? 'rgba(9, 13, 22, 0.9)' : 'rgba(255, 255, 255, 0.92)';
+
+        ctx.save();
+        ctx.globalAlpha = isLit || !hasHighlight ? 1 : 0.62;
+
+        // Left shape + letter badge aligned cleanly with upright string rail height
+        const leftBoxX = Math.max(4, leftPt.x - 10);
+        roundRectPath(ctx, leftBoxX, leftPt.y - 7.5, 34, 15, 7.5);
+        ctx.fillStyle = badgeBg;
+        ctx.fill();
+        ctx.strokeStyle = str.color;
+        ctx.lineWidth = isLit ? 2 : 1;
+        ctx.stroke();
+
+        drawShapeSymbol(ctx, str.shape, leftBoxX + 9, leftPt.y, 4.4, str.color, '#090d16');
+        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+        ctx.font = '800 10px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(str.badge, leftBoxX + 17, leftPt.y + 0.5);
+
+        // Right letter badge
+        const rightBoxX = Math.min(width - 26, rightPt.x - 12);
+        roundRectPath(ctx, rightBoxX, rightPt.y - 7, 20, 14, 7);
+        ctx.fillStyle = badgeBg;
+        ctx.fill();
+        ctx.strokeStyle = str.color;
+        ctx.lineWidth = isLit ? 2 : 1;
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+        ctx.font = '800 10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(str.badge, rightBoxX + 10, rightPt.y + 0.5);
+        ctx.restore();
+      }
+
+      // Finger lane labels cleanly tucked below hitY
+      for (const s of laneSpans) {
+        const pt = projectDeckPoint(s.uCenter, -0.014, 0, layout);
+        const labelY = Math.min(height - 11, pt.y + 12);
+        ctx.fillStyle = isDark ? '#e2e8f0' : '#0f172a';
+        ctx.font = '700 10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(s.label, pt.x, labelY);
+      }
     } else {
       for (const s of laneSpans) {
-        const pt = projectDeckPoint(s.uCenter, -0.045, 7, layout);
+        const pt = projectDeckPoint(s.uCenter, -0.032, 7, layout);
         ctx.fillStyle = isDark ? '#e2e8f0' : '#0f172a';
         ctx.font = '700 10px system-ui, sans-serif';
         ctx.textAlign = 'center';
@@ -1152,33 +1212,46 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
         ctx.fillText(s.label, pt.x, pt.y);
       }
 
-      // Intonation Gauge below the 3D receptors
+      // Intonation Gauge below the Saxophone 3D receptors
       const plotX = 16;
       const plotW = width - 32;
       const gaugeY = height - 42;
-      let readout =
-        config.id === 'saxophone'
-          ? 'Laid-Down Key Stack: Left Hand (OCT..L-PK) | Right Hand (R1..R-PK)'
-          : 'Intonation Gauge: play a note into your microphone';
+      let readout = 'Laid-Down Key Stack: Left Hand (OCT..L-PK) | Right Hand (R1..R-PK)';
       if (detectedPitch) {
-        if (config.id === 'saxophone') {
-          const writtenOffset = config.transposition?.writtenOffset ?? 9;
-          const writtenName = midiToSaxNoteName(detectedPitch.nearestMidi + writtenOffset);
-          const sign = detectedPitch.centsOff > 0 ? '+' : '';
-          readout = `Mic: Written ${writtenName} (Concert ${detectedPitch.noteName} · ${sign}${detectedPitch.centsOff}¢)`;
-        } else {
-          const sign = detectedPitch.centsOff > 0 ? '+' : '';
-          readout = `Detected: ${detectedPitch.noteName} (${sign}${detectedPitch.centsOff}¢ · ${Math.round(detectedPitch.frequencyHz)} Hz)`;
-        }
+        const writtenOffset = config.transposition?.writtenOffset ?? 9;
+        const writtenName = midiToSaxNoteName(detectedPitch.nearestMidi + writtenOffset);
+        const sign = detectedPitch.centsOff > 0 ? '+' : '';
+        readout = `Mic: Written ${writtenName} (Concert ${detectedPitch.noteName} · ${sign}${detectedPitch.centsOff}¢)`;
       }
       drawIntonationGauge(ctx, plotX, plotW, gaugeY, detectedPitch, readout, isDark);
     }
 
-    // Header bar matching the 2D lane width at the top of the screen
+    // Header bar: Strings removes top fingering/strings bar and hosts the Intonation Gauge cleanly at the top; Sax/Piano keeps lane header
     const plotX = 16;
     const plotW = width - 32;
-    const headerGeoms = computeLaneGeometries(config, plotX, plotW);
-    drawHeaderBar(ctx, width, config, headerGeoms, plotX, plotW, headerH, palette, isDark);
+    if (config.id === 'strings') {
+      ctx.save();
+      ctx.fillStyle = palette.headerBg;
+      ctx.fillRect(0, 0, width, headerH);
+      const gaugePlotW = Math.max(220, width - 140);
+      const gaugePlotX = (width - gaugePlotW) / 2;
+      let readout = 'Strings: Play the solid colored string when its block reaches that string';
+      if (detectedPitch) {
+        const sign = detectedPitch.centsOff > 0 ? '+' : '';
+        readout = `Detected: ${detectedPitch.noteName} (${sign}${detectedPitch.centsOff}¢ · ${Math.round(detectedPitch.frequencyHz)} Hz)`;
+      }
+      drawIntonationGauge(ctx, gaugePlotX, gaugePlotW, 17, detectedPitch, readout, isDark);
+      ctx.strokeStyle = palette.divider;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(plotX, headerH);
+      ctx.lineTo(plotX + plotW, headerH);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      const headerGeoms = computeLaneGeometries(config, plotX, plotW);
+      drawHeaderBar(ctx, width, config, headerGeoms, plotX, plotW, headerH, palette, isDark);
+    }
 
     // Center Wait-Mode or Judgment prompt banner
     if (gameSnapshot?.isWaiting && gameSnapshot.waitNotes?.length > 0) {
@@ -1187,7 +1260,7 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
         config.id === 'saxophone'
           ? `HOLD: ${target.badgeText} (Concert ${target.concertName})`
           : `PLAY: ${target.noteName} (${target.secondaryBadge || target.badgeText})`;
-      drawCenterPill(ctx, width / 2, headerH + 26, msg, '#f59e0b', '#111827');
+      drawCenterPill(ctx, width / 2, headerH + 26, msg, target.color || '#f59e0b', '#090d16');
     } else if (gameSnapshot?.lastJudgment && gameSnapshot.songTime - gameSnapshot.lastJudgment.time < 0.75) {
       const j = gameSnapshot.lastJudgment;
       const bg = j.type === 'perfect' ? '#10b981' : j.type === 'good' ? '#38bdf8' : '#ef4444';
