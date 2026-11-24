@@ -290,7 +290,7 @@ function syncStringsLegendUI() {
     dot.className = `shape-dot shape-${str.shape}`;
     dot.setAttribute('aria-hidden', 'true');
     dot.textContent = str.symbol;
-    const text = document.createTextNode(` ${str.name}`);
+    const text = document.createTextNode(` ${str.openNoteName}`);
     chip.append(dot, text);
     return chip;
   });

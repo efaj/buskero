@@ -59,7 +59,7 @@ export function drawShapeSymbol(ctx, shape, cx, cy, radius, fillColor, strokeCol
   ctx.save();
   ctx.fillStyle = fillColor;
   ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = Math.max(1, Math.min(2, radius * 0.22));
   ctx.beginPath();
 
   if (shape === 'diamond') {
@@ -76,6 +76,18 @@ export function drawShapeSymbol(ctx, shape, cx, cy, radius, fillColor, strokeCol
   } else if (shape === 'square') {
     const side = radius * 1.6;
     ctx.rect(cx - side / 2, cy - side / 2, side, side);
+  } else if (shape === 'star') {
+    const outerR = radius * 1.15;
+    const innerR = radius * 0.46;
+    for (let i = 0; i < 10; i += 1) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = (Math.PI / 5) * i - Math.PI / 2;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
   } else if (shape === 'hex') {
     for (let i = 0; i < 6; i += 1) {
       const angle = (Math.PI / 3) * i - Math.PI / 6;
@@ -133,7 +145,7 @@ export function getStagePalette(isDark) {
         headerBg: '#090d16',
         text: '#f1f5f9',
         muted: '#94a3b8',
-        hitLine: '#38bdf8',
+        hitLine: '#cbd5e1',
         waitGlow: '#f59e0b',
       }
     : {
@@ -147,7 +159,7 @@ export function getStagePalette(isDark) {
         headerBg: '#e2e8f0',
         text: '#0f172a',
         muted: '#475569',
-        hitLine: '#0284c7',
+        hitLine: '#334155',
         waitGlow: '#d97706',
       };
 }

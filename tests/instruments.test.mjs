@@ -45,10 +45,12 @@ test('Strings highway maps 7 finger lanes, full-width open bars, 5-string CGDAE,
   assert.equal(dFourth.primaryLane, 6);
   assert.equal(dFourth.badgeText, 'G');
 
-  // High E-string shift above B5 (83): C6 (84) clamps to lane 6 with shift badge
+  // High E-string shift above B5 (83): C6 (84) clamps to lane 6 with shift badge & star E shape
   const c6 = strings.mapNoteToHighway(84);
   assert.equal(c6.primaryLane, 6);
   assert.equal(c6.badgeText, 'E');
+  assert.equal(c6.shape, 'star');
+  assert.equal(c6.color, '#5ce62e');
   assert.equal(c6.secondaryBadge, '↑+1');
 
   // 5-String Violin (C-G-D-A-E)

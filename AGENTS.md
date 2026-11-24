@@ -21,7 +21,7 @@
 - **CSS Layers & Resets (`styles/main.css`):** Maintain `@layer base, theme, layout, components, utilities;` upfront. Never use universal `*` resets (scope resets to `:where(...)` element lists). Keep `:not(:disabled)` on `:hover` rules.
 - **Light/Dark Mode & Forms:** Keep `<meta name="color-scheme" content="light dark">` in `index.html`, `color-scheme: light dark;` on `:root` with `prefers-color-scheme` and `light-dark()` tokens, and preserve the `@supports not (accent-color: ...)` fallbacks for range and progress controls.
 - **Native Dialogs:** Open `<dialog closedby="any">` via `.showModal()`. Never add `role="dialog"`, `aria-modal`, or unconditional `display` on `dialog` (scope layout rules to `dialog[open]`), keep `overscroll-behavior: contain` on `dialog:modal` and `dialog::backdrop`, and clear `dialog.returnValue = ''` on `close`.
-- **Accessible Color:** Never convey string identity or hit/miss state by color alone (always pair color + geometric shape `■/●/◆/▲/⬡` + letter `C/G/D/A/E`). When mixing tints in CSS, use `in oklab` (never `in oklch` with neutrals).
+- **Accessible Color:** Never convey string identity or hit/miss state by color alone (always pair color + geometric shape `■/●/◆/▲/★` + letter `C/G/D/A/E`). When mixing tints in CSS, use `in oklab` (never `in oklch` with neutrals).
 
 ## Detailed DSP & Highway Invariants
 

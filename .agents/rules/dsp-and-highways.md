@@ -23,6 +23,6 @@ description: Protects YIN pitch detection, saxophone transposition math, microph
 
 ## 4. Flipped Spatial Highway Geometry (`src/instruments/` & `src/ui/highwayRenderer.mjs`)
 - Keep horizontal lanes mapped to **left-to-right physical finger ergonomics**:
-  - **Strings:** 7 chromatic 1st-position finger lanes (`L1, 1, L2, H2, 3, H3/L4, 4`) + full-width Open-string bars (`G/D/A/E`, `C/G/D/A/E`, or `C/G/D/A`) distinguished by shape (`■/●/◆/▲/⬡`) + color + letter badge, with bottom 3D string rails aligned with each incoming block row and top Intonation Gauge.
+  - **Strings:** 7 chromatic 1st-position finger lanes (`L1, 1, L2, H2, 3, H3/L4, 4`) + full-width Open-string bars (`G/D/A/E`, `C/G/D/A/E`, or `C/G/D/A`) distinguished by shape (`■/●/◆/▲/★`) + color + letter badge, with bottom 3D string rails aligned with each incoming block row and top Intonation Gauge.
   - **Saxophone:** 11-lane laid-down LH/RH key stack (`OCT..L-PK | R1..R-PK`) with full-width hollow `OPEN C#5` bar.
   - **Piano:** Octave-padded proportional white/black keyboard (`minKey..maxKey`) with melodic finger hints (`1–5`).

@@ -13,7 +13,7 @@
 - **Auto-Microphone on Mic Instruments:** Switching to **Strings (Mic)** or **Saxophone (Mic)** automatically attempts to activate the microphone and keeps it live when switching between them.
 - **Flipped Finger-First Highways:**
   - **Saxophone:** Laid-down 11-lane Left Hand / Right Hand key stack (`OCT | PALM | L1 | L2 | L3 | L-PK` · `R1 | R2 | R3 | SIDE | R-PK`) with `Alto (E♭)`, `Tenor (B♭)`, `Soprano (B♭)`, and `Concert (C)` transposition, `Auto-Fit Octave`, and **`Calibrate Horn (Play L1 'B')`**.
-  - **Strings (Violin / 5-String / Viola):** Flipped 7-lane fingerboard (`L1 | 1 | L2 | H2 | 3 | H3/L4 | 4`) plus full-width horizontal Open-string bars, vertically stacked TAB-style 3D string blocks across `G·D·A·E`, `C·G·D·A·E`, or `C·G·D·A` with distinct shapes (`■/●/◆/▲/⬡`), optional 4th-finger preference, and a live `-50¢ .. +50¢` intonation gauge.
+  - **Strings (Violin / 5-String / Viola):** Flipped 7-lane fingerboard (`L1 | 1 | L2 | H2 | 3 | H3/L4 | 4`) plus full-width horizontal Open-string bars, vertically stacked TAB-style 3D string blocks across `G·D·A·E`, `C·G·D·A·E`, or `C·G·D·A` with distinct shapes (`■/●/◆/▲/★`), optional 4th-finger preference, and a live `-50¢ .. +50¢` intonation gauge.
   - **Piano / MIDI Keys:** Dynamic octave-framed proportional keyboard (clickable in both 2D and 3D!) with melodic finger hints (`1–5`), hardware **Web MIDI** support, plus computer keyboard (`A–K`, `Z`/`X` octave shift) fallback.
 
 ---
@@ -66,7 +66,7 @@ Instead of rotating a vertical fingering chart 90° in your head, Buskero lays y
 - **Horizontal Lanes = Chromatic Finger Stops (Nut → Bridge):** `L1 (+1)` · `1 (+2)` · `L2 (+3)` · `H2 (+4)` · `3 (+5)` · `H3/L4 (+6)` · `4 (+7)`.
 - **Open Strings:** Rendered as full-width horizontal bars (`OPEN C/G/D/A/E`) across all 7 finger lanes.
 - **3D String Rack & Blocks:** Color-coded strings sit at the bottom strike zone (`G·D·A·E`, `C·G·D·A·E`, or `C·G·D·A`), and incoming 3D note blocks display every string slot (with untouched strings translucent and the bowed string solid) so you strike the bowed string right as its row meets the matching bottom string. The `-50¢ .. +50¢` intonation gauge sits cleanly at the top.
-- **String Identity (Shape + Color + Letter):** `■` **C** (Violet) · `●` **G** (Sky Blue) · `◆` **D** (Amber) · `▲` **A** (Rose) · `⬡` **E** (Emerald).
+- **String Identity (Shape + Color + Letter):** `■` **C** (Violet) · `●` **G** (Blue) · `◆` **D** (Amber) · `▲` **A** (Crimson) · `★` **E** (Neon Green).
 
 ### Piano / MIDI Keys
 

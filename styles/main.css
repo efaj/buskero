@@ -19,10 +19,10 @@
     --border-light: #cbd5e1;
     --border-dark: #334155;
 
-    --accent-light: #0369a1;
-    --accent-dark: #38bdf8;
-    --accent-text-light: #ffffff;
-    --accent-text-dark: #082f49;
+    --accent-light: #1e293b;
+    --accent-dark: #f1f5f9;
+    --accent-text-light: #f8fafc;
+    --accent-text-dark: #0f172a;
 
     --bg-canvas: var(--bg-canvas-light);
     --bg-surface: var(--bg-surface-light);
@@ -412,6 +412,11 @@
     color: var(--color-accent-text);
   }
 
+  .btn.primary:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--color-accent) 86%, var(--bg-subtle));
+    filter: none;
+  }
+
   .btn.secondary {
     background-color: var(--bg-subtle);
     color: var(--text-primary);
@@ -754,27 +759,31 @@
 
   .legend-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-    gap: 0.35rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.3rem;
   }
 
   .legend-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.38rem;
-    padding: 0.22rem 0.48rem;
+    justify-content: center;
+    gap: 0.28rem;
+    padding: 0.24rem 0.3rem;
     border-radius: 6px;
     background-color: var(--bg-canvas);
     border: 1px solid var(--border-color);
-    font-size: 0.76rem;
+    font-size: 0.73rem;
     font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .shape-square { color: #c084fc; }
-  .shape-circle { color: #38bdf8; }
-  .shape-diamond { color: #fb923c; }
-  .shape-triangle { color: #f43f5e; }
-  .shape-hex { color: #34d399; }
+  .shape-square { color: #c04cff; }
+  .shape-circle { color: #2997ff; }
+  .shape-diamond { color: #ffb703; }
+  .shape-triangle { color: #ff2e5b; }
+  .shape-star { color: #5ce62e; }
 
   .status-pill {
     padding: 0.4rem 0.6rem;
