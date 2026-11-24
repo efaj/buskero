@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect x='2' y='2' width='24' height='24' rx='7' fill='%230369a1'/%3E%3Cpath d='M9 19V9l10-1.5v10' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='19' r='2.2' fill='%23fff'/%3E%3Ccircle cx='18' cy='17.5' r='2.2' fill='%23fff'/%3E%3C/svg%3E">
-  <title>Buskero: Arcade loop trainer for sax, violin &amp; MIDI keys</title>
+  <title>Buskero: Arcade loop trainer for sax, strings &amp; MIDI keys</title>
   <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -21,14 +21,14 @@
         </svg>
         <div>
           <h1>Buskero</h1>
-          <p class="brand-sub">Arcade loop trainer for sax, violin &amp; MIDI keys</p>
+          <p class="brand-sub">Arcade loop trainer for sax, strings &amp; MIDI keys</p>
         </div>
       </div>
 
       <nav class="instrument-nav" aria-label="Instrument selection">
         <label class="mode-pill">
-          <input type="radio" name="instrument" value="violin" checked>
-          <span>Violin (Mic)</span>
+          <input type="radio" name="instrument" value="strings" checked>
+          <span>Strings (Mic)</span>
         </label>
         <label class="mode-pill">
           <input type="radio" name="instrument" value="saxophone">
@@ -207,12 +207,18 @@
             <!-- Shared setup panel starts here in Lobby and moves into Pause menu during gameplay -->
             <div id="live-setup-panel" class="live-setup-panel">
               <div id="instrument-options-card" class="setup-group">
-                <div id="violin-options" class="option-group">
+                <div id="strings-options" class="option-group">
+                  <label class="field-label" for="strings-preset-select">Instrument &amp; Strings</label>
+                  <select id="strings-preset-select" class="text-control">
+                    <option value="violin_4" selected>Violin — 4 Strings (G · D · A · E)</option>
+                    <option value="violin_5">5-String Violin (C · G · D · A · E)</option>
+                    <option value="viola_4">Viola — 4 Strings (C · G · D · A)</option>
+                  </select>
                   <label class="checkbox-row">
-                    <input type="checkbox" id="violin-fourth-finger">
+                    <input type="checkbox" id="strings-fourth-finger">
                     <span>Prefer 4th finger over upper open string</span>
                   </label>
-                  <div class="legend-grid" aria-label="Violin string shape and color key">
+                  <div id="strings-legend-grid" class="legend-grid" aria-label="Strings shape and color key">
                     <span class="legend-chip"><span class="shape-dot shape-circle" aria-hidden="true">●</span> G String</span>
                     <span class="legend-chip"><span class="shape-dot shape-diamond" aria-hidden="true">◆</span> D String</span>
                     <span class="legend-chip"><span class="shape-dot shape-triangle" aria-hidden="true">▲</span> A String</span>
@@ -268,7 +274,7 @@
               </div>
 
               <details class="sub-disclosure" id="calibration-details">
-                <summary id="calibration-summary">Audio &amp; Violin Mic Calibration</summary>
+                <summary id="calibration-summary">Audio &amp; Strings Mic Calibration</summary>
                 <div class="disclosure-body">
                   <div class="slider-row">
                     <div class="slider-head">
@@ -281,7 +287,7 @@
                   <div id="mic-calibration-fields" class="option-group">
                     <div class="slider-row">
                       <div class="slider-head">
-                        <label for="gate-slider" id="gate-label">Violin Mic Sensitivity Gate (RMS)</label>
+                        <label for="gate-slider" id="gate-label">Strings Mic Sensitivity Gate (RMS)</label>
                         <output id="gate-output" for="gate-slider">0.012</output>
                       </div>
                       <input type="range" id="gate-slider" min="4" max="40" step="2" value="12">
@@ -289,7 +295,7 @@
 
                     <div class="slider-row">
                       <div class="slider-head">
-                        <label for="tuning-offset-slider" id="tuning-offset-label">Violin Tuning Offset</label>
+                        <label for="tuning-offset-slider" id="tuning-offset-label">Strings Tuning Offset</label>
                         <output id="tuning-offset-output" for="tuning-offset-slider">0¢</output>
                       </div>
                       <div class="inline-control-row">
@@ -407,8 +413,8 @@
         <span class="field-label">Instrument</span>
         <div class="segmented" role="group" aria-label="Switch instrument while paused">
           <label class="mode-pill">
-            <input type="radio" name="pause-instrument" value="violin">
-            <span>Violin (Mic)</span>
+            <input type="radio" name="pause-instrument" value="strings">
+            <span>Strings (Mic)</span>
           </label>
           <label class="mode-pill">
             <input type="radio" name="pause-instrument" value="saxophone">
@@ -457,7 +463,7 @@
       <section class="legal-section">
         <h3>Microphone &amp; Web MIDI Data</h3>
         <p class="helper-note">
-          When enabled for Violin or Saxophone, microphone audio is processed transiently in RAM via Web Audio (<code>AudioWorklet</code> + <code>Web Worker</code>) solely for real-time YIN pitch detection. Audio waveforms are never recorded, saved to disk, or sent off your device. Hardware Web MIDI events are read locally for note matching.
+          When enabled for Strings or Saxophone, microphone audio is processed transiently in RAM via Web Audio (<code>AudioWorklet</code> + <code>Web Worker</code>) solely for real-time YIN pitch detection. Audio waveforms are never recorded, saved to disk, or sent off your device. Hardware Web MIDI events are read locally for note matching.
         </p>
       </section>
 

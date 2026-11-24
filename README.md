@@ -1,8 +1,7 @@
-# Buskero: Arcade loop trainer for sax, violin & MIDI keys
+# Buskero: Arcade loop trainer for sax, strings & MIDI keys
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fefaj%2Fbuskero.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fefaj%2Fbuskero?ref=badge_shield)
 
-
-**Buskero** is a 100% local, zero-dependency, browser-based arcade practice trainer for real **Saxophone**, **Violin**, and **Piano / MIDI Keys**. Drop in any Standard MIDI (`.mid` / `.midi`) file (saved locally in `IndexedDB`), switch between **3D Stage** (hardware WebGL Guitar Hero-style perspective) and **2D Flat** views, loop tricky phrases with `Set A` / `Set B`, slow down tempo without changing pitch, and get instant **AudioWorklet + Web Worker YIN Pitch** or **Web MIDI** feedback on flipped, finger-first highways.
+**Buskero** is a 100% local, zero-dependency, browser-based arcade practice trainer for real **Saxophone**, **Strings (Violin / 5-String / Viola)**, and **Piano / MIDI Keys**. Drop in any Standard MIDI (`.mid` / `.midi`) file (saved locally in `IndexedDB`), switch between **3D Stage** (hardware WebGL Guitar Hero-style perspective) and **2D Flat** views, loop tricky phrases with `Set A` / `Set B`, slow down tempo without changing pitch, and get instant **AudioWorklet + Web Worker YIN Pitch** or **Web MIDI** feedback on flipped, finger-first highways.
 
 ---
 
@@ -11,10 +10,10 @@
 - **Zero Runtime Dependencies & 100% Local Privacy:** Pure ES modules (`.mjs`), native Web Audio (`AudioWorklet` + `Web Worker`), WebGL2/WebGL1, Web MIDI, `IndexedDB`, `localStorage`, and a tiny Node.js static server (`server.mjs`) enforcing `connect-src 'none'`. Nothing leaves your device.
 - **Hardware-Gated 3D Highway + Interchangeable 2D Mode:** Both `Highway3DRenderer` and `Highway2DRenderer` implement the same `BaseHighwayRenderer` contract. When hardware WebGL is present (and `prefers-reduced-motion: reduce` is off), Buskero renders an extruded 3D Guitar Hero fretboard/keybed with automatic FPS fallback to 2D while keeping YIN pitch polling decoupled in a dedicated Worker thread.
 - **Browser-Local Song Library & Personal Best Tracking:** Uploaded `.mid` / `.midi` songs persist in `IndexedDB` (`buskero-library`) with SHA-256 deduplication; instrument choice, mic/horn calibration, track transpose settings, and personal-only track best scores persist in `localStorage` (with one-click erasure inside **Privacy & Legal**).
-- **Auto-Microphone on Mic Instruments:** Switching to **Violin (Mic)** or **Saxophone (Mic)** automatically attempts to activate the microphone and keeps it live when switching between them.
+- **Auto-Microphone on Mic Instruments:** Switching to **Strings (Mic)** or **Saxophone (Mic)** automatically attempts to activate the microphone and keeps it live when switching between them.
 - **Flipped Finger-First Highways:**
   - **Saxophone:** Laid-down 11-lane Left Hand / Right Hand key stack (`OCT | PALM | L1 | L2 | L3 | L-PK` · `R1 | R2 | R3 | SIDE | R-PK`) with `Alto (E♭)`, `Tenor (B♭)`, `Soprano (B♭)`, and `Concert (C)` transposition, `Auto-Fit Octave`, and **`Calibrate Horn (Play L1 'B')`**.
-  - **Violin:** Flipped 8-lane chromatic fingerboard (`Open | L1 | 1 | L2 | H2 | 3 | H3/L4 | 4`) with `G / D / A / E` strings encoded by distinct geometric shapes + letters, optional 4th-finger preference, and a live `-50¢ .. +50¢` intonation gauge.
+  - **Strings (Violin / 5-String / Viola):** Flipped 7-lane fingerboard (`L1 | 1 | L2 | H2 | 3 | H3/L4 | 4`) plus full-width horizontal Open-string bars, vertically stacked TAB-style 3D string blocks across `G·D·A·E`, `C·G·D·A·E`, or `C·G·D·A` with distinct shapes (`■/●/◆/▲/⬡`), optional 4th-finger preference, and a live `-50¢ .. +50¢` intonation gauge.
   - **Piano / MIDI Keys:** Dynamic octave-framed proportional keyboard (clickable in both 2D and 3D!) with melodic finger hints (`1–5`), hardware **Web MIDI** support, plus computer keyboard (`A–K`, `Z`/`X` octave shift) fallback.
 
 ---
@@ -62,10 +61,12 @@ Instead of rotating a vertical fingering chart 90° in your head, Buskero lays y
 4. **Speaker Bleed:**
    - Use **headphones** when Microphone mode is active, or leave **Lead Guide Volume** at `0%` (Buskero mutes the lead guide automatically when you enable the mic).
 
-### Violin (Flipped 8-Lane Chromatic Fingerboard)
+### Strings (Violin / 5-String Violin / Viola)
 
-- **Horizontal Lanes = Finger Position (Nut → Bridge):** `Open (0)` · `L1 (+1)` · `1 (+2)` · `L2 (+3)` · `H2 (+4)` · `3 (+5)` · `H3/L4 (+6)` · `4 (+7)`.
-- **String Identity (Shape + Color + Letter):** `●` **G** (Sky Blue) · `◆` **D** (Amber) · `▲` **A** (Rose) · `⬡` **E** (Emerald).
+- **Horizontal Lanes = Chromatic Finger Stops (Nut → Bridge):** `L1 (+1)` · `1 (+2)` · `L2 (+3)` · `H2 (+4)` · `3 (+5)` · `H3/L4 (+6)` · `4 (+7)`.
+- **Open Strings:** Rendered as full-width horizontal bars (`OPEN C/G/D/A/E`) across all 7 finger lanes.
+- **3D String Rack & Blocks:** Color-coded strings sit at the bottom strike zone (`G·D·A·E`, `C·G·D·A·E`, or `C·G·D·A`), and incoming 3D note blocks display every string slot (with untouched strings translucent and the bowed string solid) so you strike the bowed string right as its row meets the matching bottom string. The `-50¢ .. +50¢` intonation gauge sits cleanly at the top.
+- **String Identity (Shape + Color + Letter):** `■` **C** (Violet) · `●` **G** (Sky Blue) · `◆` **D** (Amber) · `▲` **A** (Rose) · `⬡` **E** (Emerald).
 
 ### Piano / MIDI Keys
 
@@ -101,7 +102,7 @@ buskero/
 │   │   └── synthEngine.mjs           # Lookahead Web Audio accompaniment & guide synth
 │   ├── game/
 │   │   └── gameEngine.mjs            # Real-Time, Wait Mode, A-B Loop & score qualification
-│   ├── instruments/                  # Violin, Saxophone & Piano mappings
+│   ├── instruments/                  # Strings, Saxophone & Piano mappings
 │   ├── midi/                         # Binary SMF parser/writer & 5 built-in practice songs
 │   ├── storage/
 │   │   ├── localStore.mjs            # Versioned localStorage preferences & personal-only hi-scores

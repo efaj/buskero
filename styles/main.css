@@ -754,7 +754,7 @@
 
   .legend-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
     gap: 0.35rem;
   }
 
@@ -770,6 +770,7 @@
     font-weight: 700;
   }
 
+  .shape-square { color: #c084fc; }
   .shape-circle { color: #38bdf8; }
   .shape-diamond { color: #fb923c; }
   .shape-triangle { color: #f43f5e; }

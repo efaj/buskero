@@ -4,7 +4,7 @@
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Buskero: Local-first arcade loop trainer for sax, violin & MIDI keys",
+  "description": "Buskero: Local-first arcade loop trainer for sax, strings & MIDI keys",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/efaj/buskero.git"

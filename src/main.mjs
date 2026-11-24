@@ -4,6 +4,7 @@ import { SynthEngine } from './audio/synthEngine.mjs';
 import { GameEngine } from './game/gameEngine.mjs';
 import { getInstrumentModule } from './instruments/index.mjs';
 import { autoFitSaxOctave, classifySaxCalibrationNote, midiToSaxNoteName } from './instruments/saxophone.mjs';
+import { STRINGS_PRESETS } from './instruments/strings.mjs';
 import { midiToNoteName, parseMidiBuffer, recommendLeadTrack } from './midi/midiParser.mjs';
 import { SAMPLE_SONGS } from './midi/sampleSongs.mjs';
 import { createLocalStore, normalizeFolderPath } from './storage/localStore.mjs';
@@ -21,7 +22,7 @@ const gpuCapability = detect3DCapability();
 const frameBudgetMonitor = new FrameBudgetMonitor({ maxFrameMs: 45, windowSize: 90 });
 
 function getMicInstrumentKey(instrumentId = state.instrumentId) {
-  return instrumentId === 'saxophone' ? 'saxophone' : 'violin';
+  return instrumentId === 'saxophone' ? 'saxophone' : 'strings';
 }
 
 const initialMicProfile = savedPrefs.micSettings[getMicInstrumentKey(savedPrefs.instrumentId)];
@@ -31,8 +32,9 @@ const state = {
   instrumentId: savedPrefs.instrumentId,
   viewMode: savedPrefs.viewMode,
   activeViewMode: '2d',
+  stringsPreset: savedPrefs.stringsPreset,
   saxTransposition: savedPrefs.saxTransposition,
-  violinPreferFourth: savedPrefs.violinPreferFourth,
+  stringsPreferFourth: savedPrefs.stringsPreferFourth,
   playMode: savedPrefs.playMode,
   tempoPct: savedPrefs.tempoPct,
   lookaheadSec: savedPrefs.lookaheadSec,
@@ -56,7 +58,7 @@ const state = {
   micActive: false,
   micAutoManaged: false,
   micSettings: {
-    violin: { ...savedPrefs.micSettings.violin },
+    strings: { ...savedPrefs.micSettings.strings },
     saxophone: { ...savedPrefs.micSettings.saxophone },
   },
   rmsThreshold: initialMicProfile.rmsThreshold,
@@ -108,8 +110,10 @@ const els = {
   lobbySetupSlot: document.getElementById('lobby-setup-slot'),
   pauseSetupSlot: document.getElementById('pause-setup-slot'),
   liveSetupPanel: document.getElementById('live-setup-panel'),
-  violinOptions: document.getElementById('violin-options'),
-  violinFourthCheckbox: document.getElementById('violin-fourth-finger'),
+  stringsOptions: document.getElementById('strings-options'),
+  stringsPresetSelect: document.getElementById('strings-preset-select'),
+  stringsLegendGrid: document.getElementById('strings-legend-grid'),
+  stringsFourthCheckbox: document.getElementById('strings-fourth-finger'),
   saxOptions: document.getElementById('sax-options'),
   saxTranspositionSelect: document.getElementById('sax-transposition'),
   saxAutofitBtn: document.getElementById('sax-autofit-btn'),
@@ -212,7 +216,7 @@ const viewSwitcher = createHighwayViewSwitcher({
 state.activeViewMode = viewSwitcher.activeMode;
 
 function isMicInstrument(instrumentId) {
-  return instrumentId === 'violin' || instrumentId === 'saxophone';
+  return instrumentId === 'strings' || instrumentId === 'saxophone';
 }
 
 function formatSeconds(sec) {
@@ -259,7 +263,7 @@ function syncInstrumentRadios() {
 
 function syncInstrumentPanels() {
   const isMic = isMicInstrument(state.instrumentId);
-  els.violinOptions.hidden = state.instrumentId !== 'violin';
+  els.stringsOptions.hidden = state.instrumentId !== 'strings';
   els.saxOptions.hidden = state.instrumentId !== 'saxophone';
   els.pianoOptions.hidden = state.instrumentId !== 'piano';
 
@@ -277,6 +281,22 @@ function syncInstrumentPanels() {
   }
 }
 
+function syncStringsLegendUI() {
+  const preset = STRINGS_PRESETS[state.stringsPreset] ?? STRINGS_PRESETS.violin_4;
+  const chips = preset.strings.map((str) => {
+    const chip = document.createElement('span');
+    chip.className = 'legend-chip';
+    const dot = document.createElement('span');
+    dot.className = `shape-dot shape-${str.shape}`;
+    dot.setAttribute('aria-hidden', 'true');
+    dot.textContent = str.symbol;
+    const text = document.createTextNode(` ${str.name}`);
+    chip.append(dot, text);
+    return chip;
+  });
+  els.stringsLegendGrid.replaceChildren(...chips);
+}
+
 function syncMicProfileForInstrument(instrumentId = state.instrumentId) {
   const isMic = isMicInstrument(instrumentId);
   if (!isMic) {
@@ -285,7 +305,7 @@ function syncMicProfileForInstrument(instrumentId = state.instrumentId) {
   }
 
   const key = getMicInstrumentKey(instrumentId);
-  const instName = key === 'saxophone' ? 'Saxophone' : 'Violin';
+  const instName = key === 'saxophone' ? 'Saxophone' : 'Strings';
   els.calibrationSummary.textContent = `Audio & ${instName} Mic Calibration`;
   els.gateLabel.textContent = `${instName} Mic Sensitivity Gate (RMS)`;
   els.tuningOffsetLabel.textContent = `${instName} Tuning Offset`;
@@ -607,13 +627,15 @@ function rebuildChartFromCurrentSong() {
 
   const config = mod.getHighwayConfig({
     notes: shiftedNotes,
+    stringsPreset: state.stringsPreset,
     saxTransposition: state.saxTransposition,
   });
 
   let prevMidi = null;
   const mappedNotes = shiftedNotes.map((n) => {
     const mapped = mod.mapNoteToHighway(n.midi, {
-      preferFourthFinger: state.violinPreferFourth,
+      preferFourthFinger: state.stringsPreferFourth,
+      stringsPreset: state.stringsPreset,
       saxTransposition: state.saxTransposition,
       minKey: config.minKey,
       maxKey: config.maxKey,
@@ -683,7 +705,7 @@ function loadParsedSong(
     state.semitoneTranspose = savedSongCfg.semitoneTranspose;
   } else {
     state.semitoneTranspose = 0;
-    const rec = recommendLeadTrack(parsedMidi, state.instrumentId);
+    const rec = recommendLeadTrack(parsedMidi, state.instrumentId, { stringsPreset: state.stringsPreset });
     state.leadTrackIndex = rec.leadTrackIndex;
     if (state.instrumentId === 'saxophone') {
       const leadTrack = parsedMidi.tracks[rec.leadTrackIndex];
@@ -1013,7 +1035,7 @@ async function handleInstrumentChange(nextInstrumentId) {
   if (state.parsedMidi) {
     const savedSongCfg = localStore.getSongSettings(state.currentSongId);
     if (!savedSongCfg) {
-      const rec = recommendLeadTrack(state.parsedMidi, state.instrumentId);
+      const rec = recommendLeadTrack(state.parsedMidi, state.instrumentId, { stringsPreset: state.stringsPreset });
       state.leadTrackIndex = rec.leadTrackIndex;
       state.octaveShift =
         state.instrumentId === 'saxophone'
@@ -1146,7 +1168,9 @@ function applySavedPreferencesToUI() {
   els.zoomSlider.value = String(Math.round(state.lookaheadSec * 10));
   els.zoomOutput.textContent = `${state.lookaheadSec.toFixed(1)}s`;
 
-  els.violinFourthCheckbox.checked = state.violinPreferFourth;
+  els.stringsPresetSelect.value = state.stringsPreset;
+  syncStringsLegendUI();
+  els.stringsFourthCheckbox.checked = state.stringsPreferFourth;
   els.saxTranspositionSelect.value = state.saxTransposition;
 
   els.backingVolSlider.value = String(savedPrefs.backingVolumePct);
@@ -1310,9 +1334,21 @@ function bindEvents() {
     updateRangeProgressFallback(els.leadVolSlider);
   });
 
-  els.violinFourthCheckbox.addEventListener('change', () => {
-    state.violinPreferFourth = els.violinFourthCheckbox.checked;
-    localStore.savePreferences({ violinPreferFourth: state.violinPreferFourth });
+  els.stringsPresetSelect.addEventListener('change', () => {
+    state.stringsPreset = els.stringsPresetSelect.value;
+    localStore.savePreferences({ stringsPreset: state.stringsPreset });
+    syncStringsLegendUI();
+    if (state.parsedMidi && !localStore.getSongSettings(state.currentSongId)) {
+      const rec = recommendLeadTrack(state.parsedMidi, state.instrumentId, { stringsPreset: state.stringsPreset });
+      state.leadTrackIndex = rec.leadTrackIndex;
+      state.octaveShift = rec.suggestedOctaveShift;
+    }
+    rebuildChartFromCurrentSong();
+  });
+
+  els.stringsFourthCheckbox.addEventListener('change', () => {
+    state.stringsPreferFourth = els.stringsFourthCheckbox.checked;
+    localStore.savePreferences({ stringsPreferFourth: state.stringsPreferFourth });
     rebuildChartFromCurrentSong();
   });
 
@@ -1415,13 +1451,14 @@ function bindEvents() {
 
     const resetPrefs = localStore.loadPreferences();
     state.instrumentId = resetPrefs.instrumentId;
+    state.stringsPreset = resetPrefs.stringsPreset;
     state.saxTransposition = resetPrefs.saxTransposition;
-    state.violinPreferFourth = resetPrefs.violinPreferFourth;
+    state.stringsPreferFourth = resetPrefs.stringsPreferFourth;
     state.playMode = resetPrefs.playMode;
     state.tempoPct = resetPrefs.tempoPct;
     state.lookaheadSec = resetPrefs.lookaheadSec;
     state.micSettings = {
-      violin: { ...resetPrefs.micSettings.violin },
+      strings: { ...resetPrefs.micSettings.strings },
       saxophone: { ...resetPrefs.micSettings.saxophone },
     };
     state.rmsThreshold = resetPrefs.rmsThreshold;
