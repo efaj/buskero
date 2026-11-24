@@ -73,6 +73,9 @@ export function drawShapeSymbol(ctx, shape, cx, cy, radius, fillColor, strokeCol
     ctx.lineTo(cx + radius * 0.95, cy + radius * 0.8);
     ctx.lineTo(cx - radius * 0.95, cy + radius * 0.8);
     ctx.closePath();
+  } else if (shape === 'square') {
+    const side = radius * 1.6;
+    ctx.rect(cx - side / 2, cy - side / 2, side, side);
   } else if (shape === 'hex') {
     for (let i = 0; i < 6; i += 1) {
       const angle = (Math.PI / 3) * i - Math.PI / 6;

@@ -217,8 +217,8 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      if (config.id === 'violin') {
-        this._drawViolinNote(ctx, note, laneGeoms, yTop, yBottom, isWaitingTarget, isDark);
+      if (config.id === 'strings') {
+        this._drawStringsNote(ctx, note, laneGeoms, yTop, yBottom, isWaitingTarget, isDark);
       } else if (config.id === 'saxophone') {
         this._drawSaxNote(ctx, note, laneGeoms, yTop, yBottom, isWaitingTarget, isDark);
       } else {
@@ -246,9 +246,9 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
     // 5. Render instrument-specific Hit Bar / Footer
     if (config.id === 'piano') {
       this._drawPianoFooter(ctx, laneGeoms, hitY, footerH, liveMidiSet, isDark);
-    } else if (config.id === 'violin') {
+    } else if (config.id === 'strings') {
       this.pianoHitZones = [];
-      this._drawViolinFooter(ctx, laneGeoms, plotX, plotW, hitY, footerH, detectedPitch, gameSnapshot, isDark);
+      this._drawStringsFooter(ctx, laneGeoms, plotX, plotW, hitY, footerH, detectedPitch, gameSnapshot, isDark);
     } else {
       this.pianoHitZones = [];
       this._drawSaxFooter(ctx, config, laneGeoms, plotX, plotW, hitY, footerH, detectedPitch, gameSnapshot, isDark);
@@ -262,8 +262,22 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
       ctx.save();
       ctx.globalAlpha = Math.max(0, eff.life);
       ctx.fillStyle = eff.color;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = eff.openNote && config.id === 'strings' ? eff.color : '#ffffff';
+      ctx.lineWidth = 2.5;
+      if (eff.openNote && config.id === 'strings') {
+        const expand = (1 - eff.life) * 8;
+        roundRectPath(
+          ctx,
+          plotX + 4 - expand * 0.4,
+          hitY - 12 - expand * 0.5,
+          plotW - 8 + expand * 0.8,
+          24 + expand,
+          10,
+        );
+        ctx.stroke();
+        ctx.restore();
+        continue;
+      }
       const targets = eff.openNote ? [5] : (eff.laneIndices ?? []);
       for (const laneIdx of targets) {
         const g = laneGeoms[laneIdx];
@@ -284,7 +298,7 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
         config.id === 'saxophone'
           ? `HOLD: ${target.badgeText} (Concert ${target.concertName})`
           : `PLAY: ${target.noteName} (${target.secondaryBadge || target.badgeText})`;
-      drawCenterPill(ctx, width / 2, headerH + 26, msg, '#f59e0b', '#111827');
+      drawCenterPill(ctx, width / 2, headerH + 26, msg, target.color || '#f59e0b', '#090d16');
     } else if (gameSnapshot?.lastJudgment && gameSnapshot.songTime - gameSnapshot.lastJudgment.time < 0.75) {
       const j = gameSnapshot.lastJudgment;
       const bg = j.type === 'perfect' ? '#10b981' : j.type === 'good' ? '#38bdf8' : '#ef4444';
@@ -293,7 +307,50 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
     }
   }
 
-  _drawViolinNote(ctx, note, laneGeoms, yTop, yBottom, isWaitingTarget, isDark) {
+  _drawStringsNote(ctx, note, laneGeoms, yTop, yBottom, isWaitingTarget, isDark) {
+    if (note.openNote) {
+      const firstLane = laneGeoms[0];
+      const lastLane = laneGeoms[laneGeoms.length - 1];
+      if (!firstLane || !lastLane) return;
+      const barX = firstLane.x + 4;
+      const barW = lastLane.x + lastLane.w - firstLane.x - 8;
+      const headH = 24;
+      const headY = yBottom - headH;
+
+      if (yBottom - yTop > headH + 8) {
+        ctx.save();
+        ctx.globalAlpha *= 0.22;
+        ctx.fillStyle = note.color;
+        roundRectPath(ctx, barX + 10, yTop, Math.max(20, barW - 20), yBottom - yTop - headH / 2, 6);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.globalAlpha *= isWaitingTarget ? 0.36 : 0.24;
+      ctx.fillStyle = note.color;
+      roundRectPath(ctx, barX, headY, barW, headH, 10);
+      ctx.fill();
+      ctx.restore();
+
+      roundRectPath(ctx, barX, headY, barW, headH, 10);
+      ctx.strokeStyle = note.color;
+      ctx.lineWidth = isWaitingTarget ? 3 : 2.2;
+      ctx.stroke();
+
+      const labelText = `OPEN ${note.badgeText} · ${note.noteName}`;
+      ctx.font = '800 12px system-ui, -apple-system, sans-serif';
+      const tw = ctx.measureText(labelText).width;
+      const iconX = barX + barW / 2 - tw / 2 - 14;
+      drawShapeSymbol(ctx, note.shape, iconX, headY + headH / 2, 7.5, note.color, '#090d16');
+
+      ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelText, barX + barW / 2 + 8, headY + headH / 2);
+      return;
+    }
+
     const lane = laneGeoms[note.primaryLane];
     if (!lane) return;
     const cx = lane.x + lane.w / 2;
@@ -308,12 +365,12 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
     }
 
     const radius = Math.min(20, lane.w * 0.34);
-    const stroke = isWaitingTarget ? '#fef08a' : '#0f172a';
+    const stroke = isWaitingTarget ? '#f8fafc' : '#0f172a';
     drawShapeSymbol(ctx, note.shape, cx, yBottom - 14, radius, note.color, stroke);
 
     if (isWaitingTarget) {
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = note.color;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.arc(cx, yBottom - 14, radius + 5, 0, Math.PI * 2);
       ctx.stroke();
@@ -433,18 +490,48 @@ export class Highway2DRenderer extends BaseHighwayRenderer {
     }
   }
 
-  _drawViolinFooter(ctx, laneGeoms, plotX, plotW, hitY, _footerH, detectedPitch, gameSnapshot, isDark) {
+  _drawStringsFooter(ctx, laneGeoms, plotX, plotW, hitY, _footerH, detectedPitch, gameSnapshot, isDark) {
     const targetNotes = gameSnapshot?.waitNotes ?? [];
-    const targetLaneSet = new Set(targetNotes.map((n) => n.primaryLane));
+    const targetLaneColors = new Map();
+    let openTargetColor = null;
+    for (const n of targetNotes) {
+      if (n.openNote) {
+        openTargetColor = n.color;
+      } else if (n.primaryLane >= 0) {
+        targetLaneColors.set(n.primaryLane, n.color);
+      }
+    }
+
+    if (openTargetColor) {
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = openTargetColor;
+      roundRectPath(ctx, plotX + 4, hitY + 4, plotW - 8, 34, 10);
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = openTargetColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     for (const g of laneGeoms) {
       const cx = g.x + g.w / 2;
-      const isTarget = targetLaneSet.has(g.index);
-      ctx.fillStyle = isTarget ? 'rgba(245, 158, 11, 0.28)' : isDark ? 'rgba(30, 41, 59, 0.9)' : '#e2e8f0';
-      roundRectPath(ctx, g.x + 4, hitY + 6, g.w - 8, 30, 8);
-      ctx.fill();
-      ctx.strokeStyle = isTarget ? '#f59e0b' : isDark ? '#334155' : '#94a3b8';
-      ctx.lineWidth = 1.5;
+      const targetColor = targetLaneColors.get(g.index) ?? null;
+      if (targetColor) {
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        ctx.fillStyle = targetColor;
+        roundRectPath(ctx, g.x + 4, hitY + 6, g.w - 8, 30, 8);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = isDark ? 'rgba(30, 41, 59, 0.9)' : '#e2e8f0';
+        roundRectPath(ctx, g.x + 4, hitY + 6, g.w - 8, 30, 8);
+        ctx.fill();
+      }
+      ctx.strokeStyle = targetColor ?? (isDark ? '#334155' : '#94a3b8');
+      ctx.lineWidth = targetColor ? 2 : 1.5;
       ctx.stroke();
 
       ctx.fillStyle = isDark ? '#e2e8f0' : '#0f172a';
