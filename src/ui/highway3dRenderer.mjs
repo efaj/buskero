@@ -911,12 +911,160 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       this._emitExtrudedPrism(0, 1, -0.003, 0.003, hCenter - halfH, hCenter + halfH, wireRgb, alpha, layout, bgRgb);
     }
   }
+
+  _emitStringsNoteBlock(
+    note,
+    { zNear, zEnd, alpha, isWaitingTarget, config, laneSpans, rackMetrics, layout, bgRgb, isDark, hudLabels },
+  ) {
+    const legend = config.legend ?? [];
+    const sCount = Math.max(1, legend.length);
+    let activeStrIdx = Number.isInteger(note.stringIndex)
+      ? note.stringIndex
+      : legend.findIndex((s) => s.id === note.stringId);
+    if (activeStrIdx < 0 || activeStrIdx >= sCount) activeStrIdx = 0;
+    const activeRow = sCount - 1 - activeStrIdx;
+
+    let u0 = 0.008;
+    let u1 = 0.992;
+    if (!note.openNote) {
+      const span = laneSpans[note.primaryLane];
+      if (!span) return;
+      const inset = span.uWidth * 0.08;
+      u0 = span.u0 + inset;
+      u1 = span.u1 - inset;
+    }
+
+    // Sustain ribbon trails behind the upright note block at the bowed string's height
+    if (zEnd > zNear + 0.025) {
+      const tailInset = note.openNote ? 0.04 : (u1 - u0) * 0.28;
+      const tailAlpha = note.openNote ? alpha * 0.24 : alpha * 0.44;
+      const activeRgb = hexToRgb(legend[activeStrIdx]?.color ?? note.color);
+      const tailRgb = desaturateRgb(activeRgb, 0.85, isDark);
+      const tailH = rackMetrics.hForRow(activeRow);
+      this._emitExtrudedPrism(
+        u0 + tailInset,
+        u1 - tailInset,
+        zNear + 0.008,
+        zEnd,
+        tailH - 2.0,
+        tailH + 2.0,
+        tailRgb,
+        tailAlpha,
+        layout,
+        bgRgb,
+      );
+    }
+
+    // Upright camera-facing dark backing card + side posts
+    const cardRgb = isDark ? [0.03, 0.048, 0.095] : [0.91, 0.94, 0.98];
+    this._emitUprightQuad(
+      u0,
+      u1,
+      zNear + 0.005,
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      cardRgb,
+      alpha * 0.9,
+      layout,
+      bgRgb,
+    );
+
+    const noteRgb = hexToRgb(note.color);
+    const bracketW = note.openNote ? 0.009 : Math.max(0.004, (u1 - u0) * 0.055);
+    const frameRgb = isWaitingTarget ? noteRgb : isDark ? [0.35, 0.45, 0.62] : [0.42, 0.5, 0.62];
+    this._emitExtrudedPrism(
+      u0,
+      u0 + bracketW,
+      zNear,
+      Math.min(1.06, zNear + 0.007),
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      frameRgb,
+      alpha * 0.88,
+      layout,
+      bgRgb,
+    );
+    this._emitExtrudedPrism(
+      u1 - bracketW,
+      u1,
+      zNear,
+      Math.min(1.06, zNear + 0.007),
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      frameRgb,
+      alpha * 0.88,
+      layout,
+      bgRgb,
+    );
+
+    const rowU0 = u0 + bracketW * 1.1;
+    const rowU1 = u1 - bracketW * 1.1;
+
+    for (let row = 0; row < sCount; row += 1) {
+      const str = legend[sCount - 1 - row];
+      const strRgb = hexToRgb(str?.color ?? note.color);
+      const hCenter = rackMetrics.hForRow(row);
+
+      if (row === activeRow) {
+        // Active bowed string: 100% full-saturation 3D prism facing the camera
+        this._emitExtrudedPrism(
+          rowU0,
+          rowU1,
+          zNear - 0.001,
+          Math.min(1.06, zNear + 0.007),
+          hCenter - rackMetrics.activeHalfH,
+          hCenter + rackMetrics.activeHalfH,
+          strRgb,
+          alpha,
+          layout,
+          bgRgb,
+        );
+      } else {
+        // Inactive untouched string: desaturated slot + crisp desaturated center wire so active string pops
+        const mutedRgb = desaturateRgb(strRgb, 0.24, isDark);
+        this._emitUprightQuad(
+          rowU0,
+          rowU1,
+          zNear + 0.003,
+          hCenter - rackMetrics.inactiveHalfH,
+          hCenter + rackMetrics.inactiveHalfH,
+          mutedRgb,
+          alpha * 0.38,
+          layout,
+          bgRgb,
+        );
+        this._emitUprightQuad(
+          rowU0,
+          rowU1,
+          zNear + 0.002,
+          hCenter - 1.1,
+          hCenter + 1.1,
+          mutedRgb,
+          alpha * 0.78,
+          layout,
+          bgRgb,
+        );
+      }
+    }
+
+    const topCenter = projectDeckPoint((u0 + u1) * 0.5, zNear, rackMetrics.frameTopH + 2, layout);
+    hudLabels.push({
+      kind: 'strings-stack',
+      note,
+      alpha,
+      isWaitingTarget,
+      center: topCenter,
+    });
+  }
+
   _renderHudOverlay(ctx, state) {
     const {
       width,
       height,
       headerH,
       layout,
+      rackMetrics,
+      highlightedStringIds,
       laneSpans,
       config,
       hudLabels,
@@ -928,34 +1076,28 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Draw Violin shapes & crisp text badges onto projected 3D gem tops
+    // Draw Strings / Sax / Piano compact labels above or onto projected 3D note blocks
     for (const item of hudLabels) {
       const { center, note, alpha } = item;
       const scale = Math.max(0.38, center.scale);
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      if (item.kind === 'violin') {
-        const radius = Math.max(8, 17 * scale);
-        drawShapeSymbol(
-          ctx,
-          note.shape,
-          center.x,
-          center.y,
-          radius,
-          note.color,
-          item.isWaitingTarget ? '#fef08a' : '#090d16',
-        );
-        ctx.fillStyle = '#090d16';
-        ctx.font = `800 ${Math.max(8, Math.round(11 * scale))}px system-ui, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(note.badgeText, center.x, center.y + 0.5);
-
-        if (scale >= 0.52) {
+      if (item.kind === 'strings-stack') {
+        if (scale >= 0.44) {
+          const badgeY = center.y - 9 * scale;
+          const label = note.openNote
+            ? `OPEN ${note.badgeText} · ${note.noteName}`
+            : `${note.badgeText} · ${note.noteName}`;
+          ctx.font = `800 ${Math.max(8, Math.round(10 * scale))}px system-ui, sans-serif`;
+          const tw = ctx.measureText(label).width;
+          const symR = Math.max(4, 5.2 * scale);
+          const symX = center.x - tw / 2 - symR * 1.45;
+          drawShapeSymbol(ctx, note.shape, symX, badgeY, symR, note.color, '#090d16');
           ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
-          ctx.font = `700 ${Math.max(8, Math.round(10 * scale))}px system-ui, sans-serif`;
-          ctx.fillText(note.noteName, center.x, center.y - radius - 9 * scale);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, center.x + symR * 0.7, badgeY);
         }
       } else if (item.kind === 'sax-open') {
         ctx.fillStyle = isDark ? '#f3e8ff' : '#3b0764';
