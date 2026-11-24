@@ -165,3 +165,130 @@ export function getHighwayConfig(options = {}) {
     legend: preset.strings,
   };
 }
+
+/**
+ * Map a concert MIDI note to the flipped 7-lane Strings highway (`L1..4`) plus
+ * full-width horizontal Open-string bars across Violin (GDAE), 5-String Violin (CGDAE),
+ * and Viola (CGDA). String identity is encoded by color + geometric shape + badge.
+ */
+export function mapNoteToHighway(midiNote, context = {}) {
+  const preferFourthFinger = Boolean(context.preferFourthFinger);
+  const preset = STRINGS_PRESETS[context.stringsPreset] ?? STRINGS_PRESETS.violin_4;
+  const strings = preset.strings;
+  const lowestString = strings[0];
+  const highestString = strings[strings.length - 1];
+  const maxFirstPosMidi = highestString.openMidi + 7;
+
+  const rounded = Math.round(midiNote);
+  const noteName = midiToNoteName(rounded);
+
+  // Below lowest open string (G3=55 on 4-string violin, C3=48 on 5-string violin / viola)
+  if (rounded < lowestString.openMidi) {
+    return {
+      laneIndices: [],
+      primaryLane: -1,
+      stringIndex: 0,
+      stringCount: strings.length,
+      color: lowestString.color,
+      shape: lowestString.shape,
+      badgeText: lowestString.badge,
+      secondaryBadge: `↓low ${noteName}`,
+      targetMidi: rounded,
+      writtenMidi: rounded,
+      noteName,
+      stringId: lowestString.id,
+      fingerLabel: 'Open',
+      outOfRange: true,
+      openNote: true,
+      laneBadges: {},
+    };
+  }
+
+  // Above 4th finger on highest string: clamp to lane 6 ('4') with shift indicator
+  if (rounded > maxFirstPosMidi) {
+    const shift = rounded - maxFirstPosMidi;
+    return {
+      laneIndices: [6],
+      primaryLane: 6,
+      stringIndex: strings.length - 1,
+      stringCount: strings.length,
+      color: highestString.color,
+      shape: highestString.shape,
+      badgeText: highestString.badge,
+      secondaryBadge: `↑+${shift}`,
+      targetMidi: rounded,
+      writtenMidi: rounded,
+      noteName,
+      stringId: highestString.id,
+      fingerLabel: `4↑+${shift}`,
+      outOfRange: rounded > maxFirstPosMidi + 13,
+      openNote: false,
+      laneBadges: { 6: highestString.badge },
+    };
+  }
+
+  // Standard 1st-position range across active strings
+  let chosenIndex = 0;
+  let chosenString = lowestString;
+  let offset = 0;
+
+  for (let i = strings.length - 1; i >= 0; i -= 1) {
+    const candidate = strings[i];
+    if (rounded >= candidate.openMidi) {
+      chosenIndex = i;
+      chosenString = candidate;
+      offset = rounded - candidate.openMidi;
+      // Optional 4th finger preference on upper open strings
+      if (preferFourthFinger && offset === 0 && i > 0) {
+        chosenIndex = i - 1;
+        chosenString = strings[i - 1];
+        offset = 7;
+      }
+      break;
+    }
+  }
+
+  // Open string -> full-width horizontal bar across all lanes
+  if (offset === 0) {
+    return {
+      laneIndices: [],
+      primaryLane: -1,
+      stringIndex: chosenIndex,
+      stringCount: strings.length,
+      color: chosenString.color,
+      shape: chosenString.shape,
+      badgeText: chosenString.badge,
+      secondaryBadge: `Open ${chosenString.id}`,
+      targetMidi: rounded,
+      writtenMidi: rounded,
+      noteName,
+      stringId: chosenString.id,
+      fingerLabel: 'Open',
+      outOfRange: false,
+      openNote: true,
+      laneBadges: {},
+    };
+  }
+
+  const laneIdx = Math.max(0, Math.min(6, offset - 1));
+  const lane = STRINGS_LANES[laneIdx];
+
+  return {
+    laneIndices: [laneIdx],
+    primaryLane: laneIdx,
+    stringIndex: chosenIndex,
+    stringCount: strings.length,
+    color: chosenString.color,
+    shape: chosenString.shape,
+    badgeText: chosenString.badge,
+    secondaryBadge: `${lane.label} · ${noteName}`,
+    targetMidi: rounded,
+    writtenMidi: rounded,
+    noteName,
+    stringId: chosenString.id,
+    fingerLabel: lane.label,
+    outOfRange: false,
+    openNote: false,
+    laneBadges: { [laneIdx]: chosenString.badge },
+  };
+}

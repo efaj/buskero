@@ -2,41 +2,80 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as piano from '../src/instruments/piano.mjs';
 import * as saxophone from '../src/instruments/saxophone.mjs';
-import * as violin from '../src/instruments/violin.mjs';
+import * as strings from '../src/instruments/strings.mjs';
 
-test('Violin flipped highway maps 8 chromatic finger positions and 4 string shapes', () => {
-  const cfg = violin.getHighwayConfig();
-  assert.equal(cfg.lanes.length, 8);
+test('Strings highway maps 7 finger lanes, full-width open bars, 5-string CGDAE, and Viola CGDA', () => {
+  const cfg4 = strings.getHighwayConfig({ stringsPreset: 'violin_4' });
+  assert.equal(cfg4.id, 'strings');
+  assert.equal(cfg4.lanes.length, 7);
   assert.deepEqual(
-    cfg.lanes.map((l) => l.label),
-    ['Open', 'L1', '1', 'L2', 'H2', '3', 'H3/L4', '4'],
+    cfg4.lanes.map((l) => l.label),
+    ['L1', '1', 'L2', 'H2', '3', 'H3/L4', '4'],
+  );
+  assert.deepEqual(
+    cfg4.legend.map((s) => s.id),
+    ['G', 'D', 'A', 'E'],
   );
 
-  // G string open (G3 = 55) through 4th finger (D4 = 62)
-  assert.equal(violin.mapNoteToHighway(55).primaryLane, 0);
-  assert.equal(violin.mapNoteToHighway(55).badgeText, 'G');
-  assert.equal(violin.mapNoteToHighway(56).primaryLane, 1); // G#3 = L1
-  assert.equal(violin.mapNoteToHighway(57).primaryLane, 2); // A3 = 1
-  assert.equal(violin.mapNoteToHighway(58).primaryLane, 3); // Bb3 = L2
-  assert.equal(violin.mapNoteToHighway(59).primaryLane, 4); // B3 = H2
-  assert.equal(violin.mapNoteToHighway(60).primaryLane, 5); // C4 = 3
-  assert.equal(violin.mapNoteToHighway(61).primaryLane, 6); // C#4 = H3/L4
+  // Open G string (G3 = 55) renders as open full-width bar (primaryLane: -1)
+  const gOpen = strings.mapNoteToHighway(55, { stringsPreset: 'violin_4' });
+  assert.equal(gOpen.openNote, true);
+  assert.equal(gOpen.primaryLane, -1);
+  assert.deepEqual(gOpen.laneIndices, []);
+  assert.equal(gOpen.badgeText, 'G');
+  assert.equal(gOpen.shape, 'circle');
 
-  // D4 (62): Open D string by default, or 4th finger on G string when preferFourthFinger = true
-  const dOpen = violin.mapNoteToHighway(62, { preferFourthFinger: false });
-  assert.equal(dOpen.primaryLane, 0);
+  // Chromatic finger stops G#3 (56) .. C#4 (61) -> lanes 0 .. 5
+  assert.equal(strings.mapNoteToHighway(56).primaryLane, 0); // L1
+  assert.equal(strings.mapNoteToHighway(57).primaryLane, 1); // 1
+  assert.equal(strings.mapNoteToHighway(58).primaryLane, 2); // L2
+  assert.equal(strings.mapNoteToHighway(59).primaryLane, 3); // H2
+  assert.equal(strings.mapNoteToHighway(60).primaryLane, 4); // 3
+  assert.equal(strings.mapNoteToHighway(61).primaryLane, 5); // H3/L4
+
+  // D4 (62): Open D bar by default, or 4th finger (lane 6) on G string when preferFourthFinger = true
+  const dOpen = strings.mapNoteToHighway(62, { preferFourthFinger: false });
+  assert.equal(dOpen.openNote, true);
+  assert.equal(dOpen.primaryLane, -1);
   assert.equal(dOpen.badgeText, 'D');
   assert.equal(dOpen.shape, 'diamond');
 
-  const dFourth = violin.mapNoteToHighway(62, { preferFourthFinger: true });
-  assert.equal(dFourth.primaryLane, 7);
+  const dFourth = strings.mapNoteToHighway(62, { preferFourthFinger: true });
+  assert.equal(dFourth.openNote, false);
+  assert.equal(dFourth.primaryLane, 6);
   assert.equal(dFourth.badgeText, 'G');
 
-  // High E-string shift above B5 (83): C6 (84) clamps to lane 7 with shift badge
-  const c6 = violin.mapNoteToHighway(84);
-  assert.equal(c6.primaryLane, 7);
+  // High E-string shift above B5 (83): C6 (84) clamps to lane 6 with shift badge
+  const c6 = strings.mapNoteToHighway(84);
+  assert.equal(c6.primaryLane, 6);
   assert.equal(c6.badgeText, 'E');
   assert.equal(c6.secondaryBadge, '↑+1');
+
+  // 5-String Violin (C-G-D-A-E)
+  const cfg5 = strings.getHighwayConfig({ stringsPreset: 'violin_5' });
+  assert.deepEqual(
+    cfg5.legend.map((s) => s.id),
+    ['C', 'G', 'D', 'A', 'E'],
+  );
+  const cOpen = strings.mapNoteToHighway(48, { stringsPreset: 'violin_5' });
+  assert.equal(cOpen.openNote, true);
+  assert.equal(cOpen.badgeText, 'C');
+  assert.equal(cOpen.shape, 'square');
+  assert.equal(cOpen.stringIndex, 0);
+  const cSharp = strings.mapNoteToHighway(49, { stringsPreset: 'violin_5' });
+  assert.equal(cSharp.primaryLane, 0);
+  assert.equal(cSharp.badgeText, 'C');
+
+  // Viola (C-G-D-A, no E string)
+  const cfgViola = strings.getHighwayConfig({ stringsPreset: 'viola_4' });
+  assert.deepEqual(
+    cfgViola.legend.map((s) => s.id),
+    ['C', 'G', 'D', 'A'],
+  );
+  const violaHigh = strings.mapNoteToHighway(81, { stringsPreset: 'viola_4' }); // A5 clamps onto A string lane 6 (+5)
+  assert.equal(violaHigh.primaryLane, 6);
+  assert.equal(violaHigh.badgeText, 'A');
+  assert.equal(violaHigh.secondaryBadge, '↑+5');
 });
 
 test('Saxophone transposition keeps concert targetMidi for mic while mapping written fingerings', () => {
