@@ -1,13 +1,13 @@
 import * as piano from './piano.mjs';
 import * as saxophone from './saxophone.mjs';
-import * as violin from './violin.mjs';
+import * as strings from './strings.mjs';
 
 export const INSTRUMENTS = {
-  violin,
+  strings,
   saxophone,
   piano,
 };
 
 export function getInstrumentModule(id) {
-  return INSTRUMENTS[id] ?? violin;
+  return INSTRUMENTS[id] ?? strings;
 }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getHighwayConfig as getPianoConfig } from '../src/instruments/piano.mjs';
 import { getHighwayConfig as getSaxConfig } from '../src/instruments/saxophone.mjs';
-import { getHighwayConfig as getViolinConfig } from '../src/instruments/violin.mjs';
+import { getHighwayConfig as getStringsConfig } from '../src/instruments/strings.mjs';
 import {
   computeNormalizedLaneSpans,
   createDeckLayout,
@@ -43,7 +43,7 @@ test('projectDeckPoint and unprojectScreenToDeck invert cleanly for 3D piano key
 });
 
 test('computeNormalizedLaneSpans preserves left-to-right monotonic ordering across all instruments', () => {
-  for (const cfg of [getViolinConfig(), getSaxConfig(), getPianoConfig()]) {
+  for (const cfg of [getStringsConfig(), getSaxConfig(), getPianoConfig()]) {
     const spans = computeNormalizedLaneSpans(cfg);
     assert.equal(spans.length, cfg.lanes.length);
     for (const s of spans) {
