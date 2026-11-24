@@ -138,8 +138,46 @@ function createProgram(gl) {
 }
 
 /**
+ * Desaturate an RGB color (`[r, g, b]` in `0..1`) toward a balanced neutral slate
+ * so inactive Strings lanes/slots recede visually behind the active bowed string.
+ */
+export function desaturateRgb(rgb, saturation = 0.25, isDark = true) {
+  const luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+  const neutral = isDark ? Math.max(0.42, Math.min(0.62, luma * 0.82)) : Math.max(0.32, Math.min(0.54, luma * 0.72));
+  const s = Math.max(0, Math.min(1, Number(saturation) || 0));
+  return [neutral * (1 - s) + rgb[0] * s, neutral * (1 - s) + rgb[1] * s, neutral * (1 - s) + rgb[2] * s];
+}
+
+/**
+ * Compute upright vertical rack metrics (in `heightPx` above the deck surface) for
+ * both the bottom Strings gate at `z = 0` and camera-facing 3D note blocks.
+ * Using `heightPx` causes vertical row spacing to scale with `scale^1`, avoiding
+ * `scale^2` foreshortening squash down the highway.
+ */
+export function computeStringsRackMetrics(_layout, stringCount = 4) {
+  const safeCount = Math.max(1, Number(stringCount) || 4);
+  const rowPitchH = safeCount >= 5 ? 14.5 : 17.0;
+  const baseCenterH = safeCount >= 5 ? 10.0 : 11.5;
+  const hForRow = (row) => baseCenterH + (safeCount - 1 - row) * rowPitchH;
+  const frameBottomH = 2.0;
+  const frameTopH = hForRow(0) + (safeCount >= 5 ? 8.0 : 9.0);
+  const activeHalfH = safeCount >= 5 ? 4.6 : 5.2;
+  const inactiveHalfH = safeCount >= 5 ? 2.6 : 3.0;
+  return {
+    stringCount: safeCount,
+    rowPitchH,
+    baseCenterH,
+    hForRow,
+    frameBottomH,
+    frameTopH,
+    activeHalfH,
+    inactiveHalfH,
+  };
+}
+
+/**
  * WebGL2 / WebGL1 Guitar Hero-style 3D tilted highway renderer paired with a
- * crisp transparent 2D HUD canvas for badges, Violin shapes, headers, and gauges.
+ * crisp transparent 2D HUD canvas for badges, Strings shapes, headers, and gauges.
  * Implements the exact BaseHighwayRenderer interface so it is 100% replaceable
  * with Highway2DRenderer.
  */
@@ -332,6 +370,15 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     this.batch.pushQuad(bl, br, tr, tl, shadeRgb(rgb, 1, fog, bgRgb), alpha);
   }
 
+  _emitUprightQuad(u0, u1, z, hBottom, hTop, rgb, alpha, layout, bgRgb) {
+    const bl = projectDeckPoint(u0, z, hBottom, layout);
+    const br = projectDeckPoint(u1, z, hBottom, layout);
+    const tr = projectDeckPoint(u1, z, hTop, layout);
+    const tl = projectDeckPoint(u0, z, hTop, layout);
+    const fog = Math.max(0.22, (bl.fog + tr.fog) * 0.5);
+    this.batch.pushQuad(bl, br, tr, tl, shadeRgb(rgb, 1, fog, bgRgb), alpha);
+  }
+
   _emitExtrudedPrism(u0, u1, zNear, zFar, hBottom, hTop, rgb, alpha, layout, bgRgb) {
     const bNearL = projectDeckPoint(u0, zNear, hBottom, layout);
     const bNearR = projectDeckPoint(u1, zNear, hBottom, layout);
@@ -376,9 +423,12 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     const palette = getStagePalette(isDark);
     const bgRgb = isDark ? [0.03, 0.047, 0.085] : [0.92, 0.94, 0.97];
 
-    const headerH = 54;
-    const footerH = config.id === 'piano' ? 124 : config.id === 'saxophone' ? 116 : 98;
+    const stringCount = config.legend?.length ?? 4;
+    const isStrings = config.id === 'strings';
+    const headerH = isStrings ? 56 : 54;
+    const footerH = config.id === 'piano' ? 124 : config.id === 'saxophone' ? 116 : 40;
     const layout = createDeckLayout({ width, height, headerH, footerH, fovDepth: 2.15 });
+    const rackMetrics = isStrings ? computeStringsRackMetrics(layout, stringCount) : null;
     const laneSpans = computeNormalizedLaneSpans(config);
     this.lastLayout = layout;
     this.lastLaneSpans = laneSpans;
@@ -389,6 +439,8 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     }
 
     const activeLaneSet = new Set();
+    const activeLaneColors = new Map();
+    const activeStringIds = new Set();
     if (config.id === 'piano') {
       for (const s of laneSpans) {
         if (liveMidiSet.has(s.midi)) activeLaneSet.add(s.index);
@@ -396,20 +448,49 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     } else if (detectedPitch && detectedPitch.confidence >= 0.6) {
       for (const n of notes) {
         if (Math.abs(n.startTime - songTime) <= 0.45 && n.targetMidi === detectedPitch.nearestMidi) {
-          for (const idx of n.laneIndices ?? []) activeLaneSet.add(idx);
+          const nRgb = hexToRgb(n.color);
+          if (n.stringId) activeStringIds.add(n.stringId);
+          for (const idx of n.laneIndices ?? []) {
+            activeLaneSet.add(idx);
+            activeLaneColors.set(idx, nRgb);
+          }
         }
       }
     }
 
     const waitSet = new Set((gameSnapshot?.waitNotes ?? []).map((n) => n.id));
     const targetLaneSet = new Set();
+    const targetLaneColors = new Map();
+    const targetStringIds = new Set();
+    let waitPrimaryColor = null;
     for (const wn of gameSnapshot?.waitNotes ?? []) {
-      for (const idx of wn.laneIndices ?? []) targetLaneSet.add(idx);
+      const wnRgb = hexToRgb(wn.color);
+      if (!waitPrimaryColor) waitPrimaryColor = wnRgb;
+      if (wn.stringId) targetStringIds.add(wn.stringId);
+      for (const idx of wn.laneIndices ?? []) {
+        targetLaneSet.add(idx);
+        targetLaneColors.set(idx, wnRgb);
+      }
     }
+
+    let imminentStringId = null;
+    if (isStrings && targetStringIds.size === 0 && activeStringIds.size === 0) {
+      for (let i = 0; i < notes.length; i += 1) {
+        const n = notes[i];
+        if (n.status !== 'pending') continue;
+        if (n.startTime < songTime - 0.08) continue;
+        if (n.startTime > songTime + 0.5) break;
+        imminentStringId = n.stringId ?? null;
+        break;
+      }
+    }
+    const highlightedStringIds = new Set([...targetStringIds, ...activeStringIds]);
+    if (imminentStringId) highlightedStringIds.add(imminentStringId);
 
     this.batch.reset();
 
     // 1. Horizon atmosphere glow & receding deck surface
+    const deckNearZ = isStrings ? -0.025 : -0.02;
     const deckBaseRgb = isDark ? [0.06, 0.095, 0.175] : [0.88, 0.91, 0.96];
     this._emitDeckQuad(
       -0.04,
@@ -422,14 +503,15 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       layout,
       bgRgb,
     );
-    this._emitDeckQuad(0, 1, -0.02, 1.02, 0, deckBaseRgb, 1, layout, bgRgb);
+    this._emitDeckQuad(0, 1, deckNearZ, 1.02, 0, deckBaseRgb, 1, layout, bgRgb);
 
     // Glowing side rails (left & right Guitar Hero fretboard borders)
     const railRgb = hexToRgb(palette.hitLine);
-    this._emitExtrudedPrism(-0.025, 0, -0.02, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
-    this._emitExtrudedPrism(1, 1.025, -0.02, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
+    this._emitExtrudedPrism(-0.025, 0, deckNearZ, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
+    this._emitExtrudedPrism(1, 1.025, deckNearZ, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
 
     // 2. Perspective lane strips + active lane illumination beams
+    const laneNearZ = 0;
     for (let i = 0; i < laneSpans.length; i += 1) {
       const s = laneSpans[i];
       if (config.id === 'piano' && s.isAccidental) continue;
@@ -445,13 +527,13 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
             ? [0.085, 0.13, 0.23]
             : [0.93, 0.95, 0.98];
 
-      this._emitDeckQuad(s.u0, s.u1, 0, 1.0, 0.4, laneRgb, 1, layout, bgRgb);
+      this._emitDeckQuad(s.u0, s.u1, laneNearZ, 1.0, 0.4, laneRgb, 1, layout, bgRgb);
 
       // Subtle lane divider groove
       this._emitDeckQuad(
         s.u0,
         s.u0 + 0.003,
-        0,
+        laneNearZ,
         1.0,
         0.6,
         isDark ? [0.22, 0.3, 0.44] : [0.65, 0.72, 0.82],
@@ -461,8 +543,8 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       );
 
       if (activeLaneSet.has(s.index) || targetLaneSet.has(s.index)) {
-        const beamRgb = targetLaneSet.has(s.index) ? [0.96, 0.62, 0.04] : hexToRgb(s.color);
-        this._emitDeckQuad(s.u0 + 0.004, s.u1 - 0.004, 0, 0.88, 1.2, beamRgb, 0.26, layout, bgRgb);
+        const beamRgb = targetLaneColors.get(s.index) ?? activeLaneColors.get(s.index) ?? hexToRgb(s.color);
+        this._emitDeckQuad(s.u0 + 0.004, s.u1 - 0.004, laneNearZ, 0.88, 0.8, beamRgb, 0.24, layout, bgRgb);
       }
     }
 
@@ -696,20 +778,40 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
           pressed,
         });
       }
-    } else {
+    } else if (isStrings) {
+      // Low-profile finger lane receptor tabs tucked cleanly in front of the upright gate
       for (const s of laneSpans) {
         const isLit = targetLaneSet.has(s.index) || activeLaneSet.has(s.index);
-        const recRgb = targetLaneSet.has(s.index)
-          ? [0.96, 0.62, 0.04]
-          : activeLaneSet.has(s.index)
-            ? hexToRgb(s.color)
-            : isDark
-              ? [0.15, 0.22, 0.34]
-              : [0.72, 0.78, 0.87];
+        const recRgb =
+          targetLaneColors.get(s.index) ??
+          activeLaneColors.get(s.index) ??
+          (isDark ? [0.15, 0.22, 0.34] : [0.72, 0.78, 0.87]);
+        this._emitExtrudedPrism(
+          s.u0 + 0.008,
+          s.u1 - 0.008,
+          -0.022,
+          -0.004,
+          0,
+          isLit ? 4.5 : 2.0,
+          recRgb,
+          0.95,
+          layout,
+          bgRgb,
+        );
+      }
+    } else {
+      const saxDyDz = (layout.depthSpan * layout.fovDepth) / (1 - layout.farScale);
+      const saxTabNear = -Math.min(0.06, 26 / Math.max(200, saxDyDz));
+      for (const s of laneSpans) {
+        const isLit = targetLaneSet.has(s.index) || activeLaneSet.has(s.index);
+        const recRgb =
+          targetLaneColors.get(s.index) ??
+          activeLaneColors.get(s.index) ??
+          (isDark ? [0.15, 0.22, 0.34] : [0.72, 0.78, 0.87]);
         this._emitExtrudedPrism(
           s.u0 + 0.006,
           s.u1 - 0.006,
-          -0.08,
+          saxTabNear,
           -0.008,
           0,
           isLit ? 10 : 5,
@@ -763,6 +865,52 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     });
   }
 
+  _emitStringsBottomGate({ config, rackMetrics, highlightedStringIds, railRgb, layout, bgRgb, isDark }) {
+    const legend = config.legend ?? [];
+    const sCount = rackMetrics.stringCount;
+    const hasHighlight = highlightedStringIds.size > 0;
+    const gateRgb = isDark ? [0.025, 0.04, 0.085] : [0.85, 0.89, 0.94];
+
+    // Translucent upright frame backdrop & side posts at z = 0
+    this._emitUprightQuad(0, 1, 0, rackMetrics.frameBottomH, rackMetrics.frameTopH, gateRgb, 0.22, layout, bgRgb);
+    this._emitExtrudedPrism(
+      -0.012,
+      0,
+      -0.004,
+      0.004,
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      railRgb,
+      0.85,
+      layout,
+      bgRgb,
+    );
+    this._emitExtrudedPrism(
+      1,
+      1.012,
+      -0.004,
+      0.004,
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      railRgb,
+      0.85,
+      layout,
+      bgRgb,
+    );
+
+    for (let row = 0; row < sCount; row += 1) {
+      const str = legend[sCount - 1 - row];
+      if (!str) continue;
+      const hCenter = rackMetrics.hForRow(row);
+      const rawRgb = hexToRgb(str.color);
+      const isLit = highlightedStringIds.has(str.id);
+      const wireRgb = isLit ? rawRgb : desaturateRgb(rawRgb, hasHighlight ? 0.42 : 0.68, isDark);
+      const halfH = isLit ? 3.2 : 1.9;
+      const alpha = isLit ? 0.98 : hasHighlight ? 0.62 : 0.76;
+
+      this._emitExtrudedPrism(0, 1, -0.003, 0.003, hCenter - halfH, hCenter + halfH, wireRgb, alpha, layout, bgRgb);
+    }
+  }
   _renderHudOverlay(ctx, state) {
     const {
       width,
