@@ -154,17 +154,23 @@ export function desaturateRgb(rgb, saturation = 0.25, isDark = true) {
  * Using `heightPx` causes vertical row spacing to scale with `scale^1`, avoiding
  * `scale^2` foreshortening squash down the highway.
  */
-export function computeStringsRackMetrics(_layout, stringCount = 4) {
+export function computeStringsRackMetrics(layout, stringCount = 4) {
   const safeCount = Math.max(1, Number(stringCount) || 4);
-  const rowPitchH = safeCount >= 5 ? 14.5 : 17.0;
-  const baseCenterH = safeCount >= 5 ? 10.0 : 11.5;
-  const hForRow = (row) => baseCenterH + (safeCount - 1 - row) * rowPitchH;
+  const safeDepthSpan = Math.max(320, Number(layout?.depthSpan) || 440);
+  const hurdleUnitPx = Math.max(155, Math.min(220, safeDepthSpan * 0.38));
+  const hurdleHeightNorm = Number((safeCount * 0.11).toFixed(4));
+  const hurdleHeightPx = hurdleHeightNorm * hurdleUnitPx;
+  const rowPitchH = hurdleHeightPx / safeCount;
   const frameBottomH = 2.0;
-  const frameTopH = hForRow(0) + (safeCount >= 5 ? 8.0 : 9.0);
-  const activeHalfH = safeCount >= 5 ? 4.6 : 5.2;
-  const inactiveHalfH = safeCount >= 5 ? 2.6 : 3.0;
+  const baseCenterH = frameBottomH + rowPitchH * 0.52;
+  const hForRow = (row) => baseCenterH + (safeCount - 1 - row) * rowPitchH;
+  const frameTopH = frameBottomH + hurdleHeightPx + 2.0;
+  const activeHalfH = rowPitchH * 0.31;
+  const inactiveHalfH = Math.max(1.1, rowPitchH * 0.075);
   return {
     stringCount: safeCount,
+    hurdleHeightNorm,
+    hurdleHeightPx,
     rowPitchH,
     baseCenterH,
     hForRow,
@@ -505,10 +511,14 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     );
     this._emitDeckQuad(0, 1, deckNearZ, 1.02, 0, deckBaseRgb, 1, layout, bgRgb);
 
-    // Glowing side rails (left & right Guitar Hero fretboard borders)
+    // Neutral slate side rails (#252c3d with #3e4a63 inner edge trim in dark mode)
     const railRgb = hexToRgb(palette.hitLine);
-    this._emitExtrudedPrism(-0.025, 0, deckNearZ, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
-    this._emitExtrudedPrism(1, 1.025, deckNearZ, 1.02, 0, 8, railRgb, 0.92, layout, bgRgb);
+    const sideRailRgb = isDark ? hexToRgb('#252c3d') : hexToRgb('#cbd5e1');
+    const sideTrimRgb = isDark ? hexToRgb('#3e4a63') : hexToRgb('#94a3b8');
+    this._emitExtrudedPrism(-0.025, 0, deckNearZ, 1.02, 0, 8, sideRailRgb, 0.96, layout, bgRgb);
+    this._emitExtrudedPrism(1, 1.025, deckNearZ, 1.02, 0, 8, sideRailRgb, 0.96, layout, bgRgb);
+    this._emitExtrudedPrism(-0.005, 0, deckNearZ, 1.02, 0, 8.5, sideTrimRgb, 0.98, layout, bgRgb);
+    this._emitExtrudedPrism(1, 1.005, deckNearZ, 1.02, 0, 8.5, sideTrimRgb, 0.98, layout, bgRgb);
 
     // 2. Perspective lane strips + active lane illumination beams
     const laneNearZ = 0;
@@ -965,14 +975,15 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     });
   }
 
-  _emitStringsBottomGate({ config, rackMetrics, highlightedStringIds, railRgb, layout, bgRgb, isDark }) {
+  _emitStringsBottomGate({ config, rackMetrics, highlightedStringIds, layout, bgRgb, isDark }) {
     const legend = config.legend ?? [];
     const sCount = rackMetrics.stringCount;
-    const hasHighlight = highlightedStringIds.size > 0;
     const gateRgb = isDark ? [0.025, 0.04, 0.085] : [0.85, 0.89, 0.94];
+    const postRgb = isDark ? hexToRgb('#252c3d') : hexToRgb('#cbd5e1');
+    const postTrimRgb = isDark ? hexToRgb('#3e4a63') : hexToRgb('#94a3b8');
 
-    // Translucent upright frame backdrop & side posts at z = 0
-    this._emitUprightQuad(0, 1, 0, rackMetrics.frameBottomH, rackMetrics.frameTopH, gateRgb, 0.22, layout, bgRgb);
+    // Subtle upright frame backdrop & neutral slate posts at z = 0
+    this._emitUprightQuad(0, 1, 0, rackMetrics.frameBottomH, rackMetrics.frameTopH, gateRgb, 0.08, layout, bgRgb);
     this._emitExtrudedPrism(
       -0.012,
       0,
@@ -980,8 +991,8 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       0.004,
       rackMetrics.frameBottomH,
       rackMetrics.frameTopH,
-      railRgb,
-      0.85,
+      postRgb,
+      0.95,
       layout,
       bgRgb,
     );
@@ -992,8 +1003,32 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       0.004,
       rackMetrics.frameBottomH,
       rackMetrics.frameTopH,
-      railRgb,
-      0.85,
+      postRgb,
+      0.95,
+      layout,
+      bgRgb,
+    );
+    this._emitExtrudedPrism(
+      -0.003,
+      0,
+      -0.0045,
+      0.0045,
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      postTrimRgb,
+      0.98,
+      layout,
+      bgRgb,
+    );
+    this._emitExtrudedPrism(
+      1,
+      1.003,
+      -0.0045,
+      0.0045,
+      rackMetrics.frameBottomH,
+      rackMetrics.frameTopH,
+      postTrimRgb,
+      0.98,
       layout,
       bgRgb,
     );
@@ -1004,11 +1039,10 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
       const hCenter = rackMetrics.hForRow(row);
       const rawRgb = hexToRgb(str.color);
       const isLit = highlightedStringIds.has(str.id);
-      const wireRgb = isLit ? rawRgb : desaturateRgb(rawRgb, hasHighlight ? 0.42 : 0.68, isDark);
-      const halfH = isLit ? 3.2 : 1.9;
-      const alpha = isLit ? 0.98 : hasHighlight ? 0.62 : 0.76;
+      const halfH = isLit ? rackMetrics.rowPitchH * 0.2 : rackMetrics.rowPitchH * 0.12;
+      const alpha = isLit ? 0.95 : 0.25;
 
-      this._emitExtrudedPrism(0, 1, -0.003, 0.003, hCenter - halfH, hCenter + halfH, wireRgb, alpha, layout, bgRgb);
+      this._emitExtrudedPrism(0, 1, -0.003, 0.003, hCenter - halfH, hCenter + halfH, rawRgb, alpha, layout, bgRgb);
     }
   }
 
@@ -1071,7 +1105,7 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
 
     const noteRgb = hexToRgb(note.color);
     const bracketW = note.openNote ? 0.009 : Math.max(0.004, (u1 - u0) * 0.055);
-    const frameRgb = isWaitingTarget ? noteRgb : isDark ? [0.35, 0.45, 0.62] : [0.42, 0.5, 0.62];
+    const frameRgb = isWaitingTarget ? noteRgb : isDark ? hexToRgb('#3e4a63') : hexToRgb('#64748b');
     this._emitExtrudedPrism(
       u0,
       u0 + bracketW,
@@ -1120,27 +1154,16 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
           bgRgb,
         );
       } else {
-        // Inactive untouched string: desaturated slot + crisp desaturated center wire so active string pops
-        const mutedRgb = desaturateRgb(strRgb, 0.24, isDark);
-        this._emitUprightQuad(
-          rowU0,
-          rowU1,
-          zNear + 0.003,
-          hCenter - rackMetrics.inactiveHalfH,
-          hCenter + rackMetrics.inactiveHalfH,
-          mutedRgb,
-          alpha * 0.38,
-          layout,
-          bgRgb,
-        );
+        // Inactive untouched string: single crisp taut muted wire so the active string pops cleanly
+        const mutedRgb = desaturateRgb(strRgb, 0.18, isDark);
         this._emitUprightQuad(
           rowU0,
           rowU1,
           zNear + 0.002,
-          hCenter - 1.1,
-          hCenter + 1.1,
+          hCenter - rackMetrics.inactiveHalfH,
+          hCenter + rackMetrics.inactiveHalfH,
           mutedRgb,
-          alpha * 0.78,
+          alpha * 0.52,
           layout,
           bgRgb,
         );
@@ -1245,7 +1268,6 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
     } else if (config.id === 'strings') {
       const legend = config.legend ?? [];
       const sCount = Math.max(1, legend.length);
-      const hasHighlight = highlightedStringIds.size > 0;
       for (let row = 0; row < sCount; row += 1) {
         const str = legend[sCount - 1 - row];
         if (!str) continue;
@@ -1253,40 +1275,40 @@ export class Highway3DRenderer extends BaseHighwayRenderer {
         const leftPt = projectDeckPoint(0, 0, hStr, layout);
         const rightPt = projectDeckPoint(1, 0, hStr, layout);
         const isLit = highlightedStringIds.has(str.id);
-        const badgeBg = isDark ? 'rgba(9, 13, 22, 0.9)' : 'rgba(255, 255, 255, 0.92)';
+        const badgeBg = isDark ? 'rgba(9, 13, 22, 0.94)' : 'rgba(255, 255, 255, 0.94)';
 
         ctx.save();
-        ctx.globalAlpha = isLit || !hasHighlight ? 1 : 0.62;
+        ctx.globalAlpha = 1;
 
-        // Left shape + letter badge aligned cleanly with upright string rail height
+        // Left shape + letter badge kept at 100% brightness with sharp silhouette icon
         const leftBoxX = Math.max(4, leftPt.x - 10);
-        roundRectPath(ctx, leftBoxX, leftPt.y - 7.5, 34, 15, 7.5);
+        roundRectPath(ctx, leftBoxX, leftPt.y - 8, 36, 16, 8);
         ctx.fillStyle = badgeBg;
         ctx.fill();
         ctx.strokeStyle = str.color;
-        ctx.lineWidth = isLit ? 2 : 1;
+        ctx.lineWidth = isLit ? 2 : 1.4;
         ctx.stroke();
 
-        drawShapeSymbol(ctx, str.shape, leftBoxX + 9, leftPt.y, 4.4, str.color, '#090d16');
+        drawShapeSymbol(ctx, str.shape, leftBoxX + 10, leftPt.y, 5.0, str.color, '#090d16');
         ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
         ctx.font = '800 10px system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(str.badge, leftBoxX + 17, leftPt.y + 0.5);
+        ctx.fillText(str.badge, leftBoxX + 19, leftPt.y + 0.5);
 
-        // Right letter badge
+        // Right letter badge kept at 100% brightness
         const rightBoxX = Math.min(width - 26, rightPt.x - 12);
-        roundRectPath(ctx, rightBoxX, rightPt.y - 7, 20, 14, 7);
+        roundRectPath(ctx, rightBoxX, rightPt.y - 7.5, 21, 15, 7.5);
         ctx.fillStyle = badgeBg;
         ctx.fill();
         ctx.strokeStyle = str.color;
-        ctx.lineWidth = isLit ? 2 : 1;
+        ctx.lineWidth = isLit ? 2 : 1.4;
         ctx.stroke();
 
         ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
         ctx.font = '800 10px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(str.badge, rightBoxX + 10, rightPt.y + 0.5);
+        ctx.fillText(str.badge, rightBoxX + 10.5, rightPt.y + 0.5);
         ctx.restore();
       }
 

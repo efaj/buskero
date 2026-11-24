@@ -387,7 +387,7 @@ test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-widt
       assert.ok(gaugeReadout[2] < 56, `top Intonation Gauge readout y=${gaugeReadout[2]} must sit in top header`);
     }
 
-    // Verify zero solid yellow overwrite, desaturated translucent untouched slots, and upright un-squashed strike alignment
+    // Verify zero solid yellow overwrite, taut inactive wires (0.52), 0.25 idle bottom ribbons, and dynamic hurdle height
     const cfg4 = getStringsConfig({ stringsPreset: 'violin_4' });
     const gOpenWait = {
       id: 0,
@@ -395,7 +395,7 @@ test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-widt
       startTime: 0.4,
       endTime: 0.8,
       duration: 0.4,
-      ...mapStringsNote(62, { stringsPreset: 'violin_4' }), // D4 stringIndex=1 -> row=2 (1 below A, 1 above G)
+      ...mapStringsNote(55, { stringsPreset: 'violin_4' }), // G3 (#2997ff) -> D, A, E ribbons idle at 0.25 opacity
     };
     r3d.render({
       config: cfg4,
@@ -410,7 +410,8 @@ test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-widt
 
     const data = r3d.batch.data;
     let sawSolidYellow = false;
-    let sawTranslucentUntouched = false;
+    let sawTautUntouchedWire = false;
+    let sawIdleBottomRibbon = false;
     for (let v = 0; v < r3d.batch.vertexCount; v += 1) {
       const r = data[v * 6 + 2];
       const g = data[v * 6 + 3];
@@ -419,12 +420,16 @@ test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-widt
       if (Math.abs(r - 0.98) < 0.08 && Math.abs(g - 0.78) < 0.08 && Math.abs(b - 0.18) < 0.08 && a > 0.85) {
         sawSolidYellow = true;
       }
-      if (a > 0.32 && a < 0.45) {
-        sawTranslucentUntouched = true;
+      if (a > 0.48 && a < 0.56) {
+        sawTautUntouchedWire = true;
+      }
+      if (a > 0.22 && a < 0.28) {
+        sawIdleBottomRibbon = true;
       }
     }
     assert.equal(sawSolidYellow, false, 'waiting note must keep true string color instead of solid yellow');
-    assert.equal(sawTranslucentUntouched, true, 'untouched strings in upright 3D block must render visibly');
+    assert.equal(sawTautUntouchedWire, true, 'untouched strings in upright 3D block must render as crisp taut wires');
+    assert.equal(sawIdleBottomRibbon, true, 'untargeted bottom strike ribbons must drop to 0.25 opacity');
 
     // Verify desaturateRgb significantly reduces RGB chroma compared to vivid active string color
     const vividCyan = [0.22, 0.74, 0.97];
@@ -433,23 +438,28 @@ test('Strings 2D and 3D renderers support violin_4, violin_5, viola_4, full-widt
     const mutedChroma = Math.max(...mutedCyan) - Math.min(...mutedCyan);
     assert.ok(mutedChroma < vividChroma * 0.35, 'desaturateRgb must strongly reduce inactive string chroma');
 
-    // Verify upright 3D block row alignment at strike time (z = 0) & >= 4.5px un-squashed separation even at z = 0.9
+    // Verify dynamic hurdleHeightNorm (stringCount * 0.11) keeps 5-string rowPitchH legible at horizon
     const layout = createDeckLayout({ width: 900, height: 580, headerH: 56, footerH: 40, fovDepth: 2.15 });
-    const metrics = computeStringsRackMetrics(layout, 4);
+    const metrics4 = computeStringsRackMetrics(layout, 4);
+    const metrics5 = computeStringsRackMetrics(layout, 5);
+    assert.equal(metrics4.hurdleHeightNorm, 0.44);
+    assert.equal(metrics5.hurdleHeightNorm, 0.55);
+    assert.ok(Math.abs(metrics5.rowPitchH - metrics4.rowPitchH) < 0.05);
+
     const activeRow = 2; // D string on GDAE
-    const yBottomRow = projectDeckPoint(0.5, 0, metrics.hForRow(activeRow), layout).y;
-    const yBlockStrikeRow = projectDeckPoint(0.5, 0, metrics.hForRow(activeRow), layout).y;
+    const yBottomRow = projectDeckPoint(0.5, 0, metrics4.hForRow(activeRow), layout).y;
+    const yBlockStrikeRow = projectDeckPoint(0.5, 0, metrics4.hForRow(activeRow), layout).y;
     assert.ok(
       Math.abs(yBlockStrikeRow - yBottomRow) < 0.5,
       'upright block active row must align directly with bottom gate',
     );
 
     for (const zCenter of [0, 0.5, 0.9]) {
-      const rowYs = [0, 1, 2, 3].map((row) => projectDeckPoint(0.5, zCenter, metrics.hForRow(row), layout).y);
+      const rowYs = [0, 1, 2, 3, 4].map((row) => projectDeckPoint(0.5, zCenter, metrics5.hForRow(row), layout).y);
       for (let r = 1; r < rowYs.length; r += 1) {
         assert.ok(
           rowYs[r] - rowYs[r - 1] >= 4.5,
-          `upright string row ${r} must maintain >= 4.5px separation below row ${r - 1} at z=${zCenter}`,
+          `5-string row ${r} must maintain >= 4.5px separation below row ${r - 1} at z=${zCenter}`,
         );
       }
     }
